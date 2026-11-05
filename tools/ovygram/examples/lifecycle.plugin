@@ -1,0 +1,28 @@
+from base_plugin import BasePlugin
+from ui.settings import Input, Selector, Switch
+
+__id__ = "desktop.lifecycle"
+__name__ = "Проверка жизненного цикла"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = "Счётчик запусков и пример трёх типов настроек."
+__platform__ = "desktop"
+__desktop_sdk__ = 1
+__requirements__ = []
+
+
+class LifecyclePlugin(BasePlugin):
+    def on_plugin_load(self):
+        count = self.get_setting("load_count", 0) + 1
+        self.set_setting("load_count", count)
+        self.log(f"Плагин запущен. Всего запусков: {count}")
+
+    def on_plugin_unload(self):
+        self.log("Плагин выгружен.")
+
+    def create_settings(self):
+        return [
+            Switch("enabled_example", "Переключатель"),
+            Input("greeting", "Приветствие", "Привет!"),
+            Selector("choice", "Выбор", ["Первый", "Второй"]),
+        ]

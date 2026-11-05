@@ -1,0 +1,1 @@
+"""Declarative desktop plugin settings."""

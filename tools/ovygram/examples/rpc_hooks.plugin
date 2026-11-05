@@ -1,0 +1,27 @@
+from base_plugin import BasePlugin
+from hook_utils import MODIFY, HookResult
+
+__id__ = "desktop.rpc_hooks"
+__name__ = "Перехват истории"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = "Ограничивает один запрос истории двадцатью сообщениями и отмечает ответы в журнале."
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class RpcHooksPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.add_hook("before_rpc", self.before_rpc, request="messages.getHistory")
+        self.add_hook("after_rpc", self.after_rpc, request="messages.getHistory")
+
+    def before_rpc(self, context):
+        if context.request.limit > 20:
+            context.request.limit = 20
+            return HookResult(MODIFY, context)
+        return HookResult()
+
+    def after_rpc(self, context):
+        self.log(f"Ответ истории аккаунта {context.account_id}, ошибка={context.error is not None}")
+        return HookResult()

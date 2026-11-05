@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Проблемы с аккаунтом Telegram
+    url: https://telegram.org/support
+    about: Ovygram не может снять ограничения аккаунта или восстановить доступ.
+  - name: Безопасность и личные данные
+    url: https://github.com/Maxutka00/Ovygram/blob/main/SECURITY.md
+    about: Не публикуйте tdata, сессии, коды входа, ключи и личные сообщения.

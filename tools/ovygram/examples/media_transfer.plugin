@@ -1,0 +1,51 @@
+from pathlib import Path
+
+from base_plugin import BasePlugin
+from desktop import client
+from desktop.media import download_file, send_file
+from file_utils import get_plugin_data_dir
+from hook_utils import CANCEL, HookResult
+
+__id__ = "desktop.media_transfer"
+__name__ = "Проверка файлов в Избранном"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = "В Избранном команда /plugin-file полный_путь отправляет файл, /plugin-download в подписи скачивает вложение."
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class MediaTransferPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.subscribe("new_message", self.new_message)
+        self.subscribe("edited_message", self.new_message)
+        self.add_hook("before_send", self.before_send, request="messages.sendMessage")
+
+    def before_send(self, message):
+        if (message.request.peer.constructor_name == "inputPeerSelf"
+                and message.text.startswith("/plugin-file ")):
+            path = message.text.removeprefix("/plugin-file ").strip().strip('"')
+            self.run_async(self.upload(message.account_id, path))
+            return HookResult(CANCEL, reason="Начата загрузка файла из команды.")
+        return HookResult()
+
+    async def upload(self, account_id, path):
+        account = next(item for item in await client.accounts() if item.id == account_id)
+        chat = await client.get_chat(account, account.user_id)
+        await send_file(chat, path, caption="Проверка SDK", progress=self.progress)
+
+    async def new_message(self, event):
+        message = event.message
+        if message is None or not message.outgoing:
+            return
+        account = next((item for item in await client.accounts() if item.id == event.account_id), None)
+        if account is None or message.chat_id != account.user_id:
+            return
+        if message.text == "/plugin-download" and message.attachment is not None:
+            path = get_plugin_data_dir(account.id) / Path(message.attachment.name).name
+            await download_file(message.attachment, path, progress=self.progress)
+            self.log(f"Файл сохранён: {path.name}")
+
+    def progress(self, progress):
+        self.log(f"Аккаунт {progress.account_id}, {progress.transferred}/{progress.total} байт")

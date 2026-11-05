@@ -1,0 +1,12 @@
+Ovygram is an unofficial modification of Telegram Desktop.
+Fork-specific modifications were made starting on 2026-11-03.
+Copyright (c) 2026 Ovygram contributors.
+
+The modified client is distributed under the GNU General Public License,
+version 3 or (at your option) any later version. See LICENSE and LEGAL.
+Upstream copyright, license notices and the OpenSSL linking exception
+have been retained. Third-party components retain their own licenses.
+
+The original upstream README is preserved in README.upstream.md.
+This project is not affiliated with or endorsed by Telegram.
+No rights to Telegram trademarks or logos are granted by this notice.

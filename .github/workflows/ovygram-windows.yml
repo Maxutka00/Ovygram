@@ -1,0 +1,224 @@
+name: Ovygram - Windows build
+
+on:
+  workflow_dispatch:
+    inputs:
+      free_allowance_verified:
+        description: Remaining free compute/storage checked; paid overage blocked
+        type: boolean
+        required: true
+        default: false
+      mode:
+        description: Inspect, verify the Python host, or build Windows
+        type: choice
+        options: [inspect, build, plugin-smoke, plugins]
+        default: inspect
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ovygram-baseline
+  cancel-in-progress: false
+
+jobs:
+  baseline:
+    if: inputs.free_allowance_verified
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 255
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUNBUFFERED: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Checkout build controls
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: control
+          persist-credentials: false
+
+      - name: Establish report directory
+        run: |
+          New-Item -ItemType Directory -Path "$env:GITHUB_WORKSPACE/reports" -Force | Out-Null
+          python control/tools/ovygram/baseline.py init --root "$env:GITHUB_WORKSPACE" --mode '${{ inputs.mode }}'
+
+      - name: Inspect compiler and disk
+        run: ./control/tools/ovygram/toolchain.ps1
+
+      - name: Checkout source to build
+        if: inputs.mode != 'inspect'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ${{ startsWith(inputs.mode, 'plugin') && github.repository || 'telegramdesktop/tdesktop' }}
+          ref: ${{ startsWith(inputs.mode, 'plugin') && github.sha || '3a2a9a34e833d3243a13787215b8a7cdcf5dc3c3' }}
+          submodules: recursive
+          path: TBuild/tdesktop
+          persist-credentials: false
+
+      - name: Verify source identity and build controls
+        if: inputs.mode != 'inspect'
+        run: |
+          python control/tools/ovygram/baseline.py verify --root "$env:GITHUB_WORKSPACE"
+          python -m unittest discover -s control/tools/ovygram/tests -v
+
+      - name: Stage embedded Python
+        if: startsWith(inputs.mode, 'plugin')
+        run: |
+          python control/tools/ovygram/python_bundle.py --root "$env:GITHUB_WORKSPACE/plugin-python" --downloads "$env:GITHUB_WORKSPACE/python-downloads" --sdk "$env:GITHUB_WORKSPACE/TBuild/tdesktop/Telegram/PluginSDK"
+
+      - name: Verify native Python host and plugin lifecycle
+        if: startsWith(inputs.mode, 'plugin')
+        run: |
+          ./control/tools/ovygram/plugin_host_smoke.ps1 -Source "$env:GITHUB_WORKSPACE/TBuild/tdesktop" -PythonRoot "$env:GITHUB_WORKSPACE/plugin-python"
+
+      - name: Identify compatible dependency cache
+        id: cache-key
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        run: python control/tools/ovygram/baseline.py cache-key --root "$env:GITHUB_WORKSPACE"
+
+      - name: Restore foundation snapshot
+        id: restore-foundation
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: dependency-cache/foundation
+          key: ${{ steps.cache-key.outputs.key }}-foundation
+          restore-keys: |
+            ${{ steps.cache-key.outputs.release-fallback-key && format('{0}-foundation', steps.cache-key.outputs.release-fallback-key) || '' }}
+            ${{ steps.cache-key.outputs.debug-key }}-foundation
+
+      - name: Unpack foundation snapshot
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        env:
+          RESTORED_CACHE_KEY: ${{ steps.restore-foundation.outputs.cache-matched-key }}
+        run: python control/tools/ovygram/baseline.py cache-restore --group foundation --root "$env:GITHUB_WORKSPACE"
+
+      - name: Prepare foundation dependencies
+        id: prepare-foundation
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        run: python control/tools/ovygram/baseline.py prepare-foundation --root "$env:GITHUB_WORKSPACE"
+
+      - name: Compact foundation results
+        id: pack-foundation
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins') && steps.restore-foundation.outputs.cache-hit != 'true'
+        run: python control/tools/ovygram/baseline.py cache-pack --group foundation --root "$env:GITHUB_WORKSPACE"
+
+      - name: Save foundation snapshot
+        if: steps.pack-foundation.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: dependency-cache/foundation
+          key: ${{ steps.cache-key.outputs.key }}-foundation
+
+      - name: Restore qt snapshot
+        id: restore-qt
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: dependency-cache/qt
+          key: ${{ steps.cache-key.outputs.key }}-qt
+          restore-keys: |
+            ${{ steps.cache-key.outputs.release-fallback-key && format('{0}-qt', steps.cache-key.outputs.release-fallback-key) || '' }}
+
+      - name: Unpack qt snapshot
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        env:
+          RESTORED_CACHE_KEY: ${{ steps.restore-qt.outputs.cache-matched-key }}
+        run: python control/tools/ovygram/baseline.py cache-restore --group qt --root "$env:GITHUB_WORKSPACE"
+
+      - name: Prepare qt dependencies
+        id: prepare-qt
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        run: python control/tools/ovygram/baseline.py prepare-qt --root "$env:GITHUB_WORKSPACE"
+
+      - name: Compact qt results
+        id: pack-qt
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins') && steps.restore-qt.outputs.cache-hit != 'true'
+        run: python control/tools/ovygram/baseline.py cache-pack --group qt --root "$env:GITHUB_WORKSPACE"
+
+      - name: Save qt snapshot
+        if: steps.pack-qt.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: dependency-cache/qt
+          key: ${{ steps.cache-key.outputs.key }}-qt
+
+      - name: Restore extras snapshot
+        id: restore-extras
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: dependency-cache/extras
+          key: ${{ steps.cache-key.outputs.key }}-extras
+          restore-keys: |
+            ${{ steps.cache-key.outputs.release-fallback-key && format('{0}-extras', steps.cache-key.outputs.release-fallback-key) || '' }}
+            ${{ steps.cache-key.outputs.debug-key }}-extras
+
+      - name: Unpack extras snapshot
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        env:
+          RESTORED_CACHE_KEY: ${{ steps.restore-extras.outputs.cache-matched-key }}
+        run: python control/tools/ovygram/baseline.py cache-restore --group extras --root "$env:GITHUB_WORKSPACE"
+
+      - name: Prepare extras dependencies
+        id: prepare-extras
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        run: python control/tools/ovygram/baseline.py prepare-extras --root "$env:GITHUB_WORKSPACE"
+
+      - name: Compact extras results
+        id: pack-extras
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins') && steps.restore-extras.outputs.cache-hit != 'true'
+        run: python control/tools/ovygram/baseline.py cache-pack --group extras --root "$env:GITHUB_WORKSPACE"
+
+      - name: Save extras snapshot
+        if: steps.pack-extras.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: dependency-cache/extras
+          key: ${{ steps.cache-key.outputs.key }}-extras
+
+      - name: Configure Windows build
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        run: python control/tools/ovygram/baseline.py configure --root "$env:GITHUB_WORKSPACE"
+
+      - name: Compile plugin integration units first
+        if: inputs.mode == 'plugins'
+        run: python control/tools/ovygram/baseline.py verify-integration --root "$env:GITHUB_WORKSPACE"
+
+      - name: Build baseline Telegram
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        run: python control/tools/ovygram/baseline.py build --root "$env:GITHUB_WORKSPACE"
+
+      - name: Package Windows build
+        if: (inputs.mode == 'build' || inputs.mode == 'plugins')
+        run: python control/tools/ovygram/baseline.py package --root "$env:GITHUB_WORKSPACE"
+
+      - name: Summarize result
+        if: always()
+        env:
+          JOB_RESULT: ${{ job.status }}
+        run: python control/tools/ovygram/baseline.py report --root "$env:GITHUB_WORKSPACE"
+
+      - name: Retain diagnostics for one day
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: baseline-diagnostics-${{ github.run_id }}
+          path: reports/
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Retain Windows binary for one day
+        if: success() && (inputs.mode == 'build' || inputs.mode == 'plugins')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.mode == 'plugins' && 'ovygram' || 'upstream-baseline' }}-${{ github.run_id }}
+          path: artifacts/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error

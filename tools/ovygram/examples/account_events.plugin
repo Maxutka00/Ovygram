@@ -1,0 +1,35 @@
+from base_plugin import BasePlugin
+from desktop import client, tl
+
+__id__ = "desktop.account_events"
+__name__ = "Аккаунты и события"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = "Читает список аккаунтов и состояние RPC, журналирует переключения и сообщения."
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class AccountEventsPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.subscribe("new_message", self.new_message)
+        self.subscribe("account_changed", self.account_changed)
+        self.subscribe("chat_changed", self.chat_changed)
+        self.run_async(self.describe_accounts())
+
+    async def describe_accounts(self):
+        for account in await client.accounts():
+            state = await client.rpc(account, tl.updates.getState())
+            self.log(f"Аккаунт {account.id}, pts={state.pts}")
+
+    def new_message(self, event):
+        count = self.get_account_setting(event.account_id, "received", 0) + 1
+        self.set_account_setting(event.account_id, "received", count)
+        self.log(f"Новое сообщение аккаунта {event.account_id}, всего={count}")
+
+    def account_changed(self, event):
+        self.log(f"Активный аккаунт {event.account_id}")
+
+    def chat_changed(self, event):
+        self.log(f"Открыт чат аккаунта {event.account_id}: {event.chat.id if event.chat else None}")
