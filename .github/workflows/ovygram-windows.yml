@@ -30,7 +30,7 @@ jobs:
   baseline:
     if: inputs.free_allowance_verified
     runs-on: windows-2025-vs2026
-    timeout-minutes: 255
+    timeout-minutes: 360
     defaults:
       run:
         shell: pwsh

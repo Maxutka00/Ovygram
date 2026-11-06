@@ -185,7 +185,7 @@ def main():
     if args.action == 'init':
         write_json(state_path, {
             'upstream': UPSTREAM, 'mode': args.mode, 'started': time.time(),
-            'deadline': time.time() + 240 * 60,
+            'deadline': time.time() + 345 * 60,
             'initial_free_bytes': shutil.disk_usage(root).free,
             'status': 'initialized', 'stage': 'preflight',
             'configuration': 'Release' if args.mode == 'plugins' else 'Debug',
