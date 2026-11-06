@@ -176,6 +176,7 @@ def main():
     parser.add_argument('--root', required=True, type=Path)
     parser.add_argument('--mode', choices=['inspect', 'build', 'plugin-smoke', 'plugins'], default='inspect')
     parser.add_argument('--group', choices=['foundation', 'qt', 'extras'])
+    parser.add_argument('--require-cache', action='store_true')
     args = parser.parse_args()
     root = args.root.resolve()
     source = root / 'TBuild/tdesktop'
@@ -217,12 +218,23 @@ def main():
                 parser.error('--group required')
             restored_key = os.getenv('RESTORED_CACHE_KEY', '')
             if restored_key == f'{debug_identity}-{args.group}':
+                if args.require_cache and state['configuration'] == 'Release':
+                    raise RuntimeError(
+                        f'A Release dependency cache is required for {args.group}; '
+                        'the restored Debug snapshot would require rebuilding. '
+                        'Prepare Release dependencies separately, then retry on the same branch.')
                 identity = debug_identity
             elif release_fallback and restored_key == f'{release_fallback}-{args.group}':
                 identity = release_fallback
             elif restored_key and restored_key != f'{identity}-{args.group}':
                 raise RuntimeError('Unexpected dependency cache key.')
-            print('Snapshot restored:', dependency_cache.restore(root, args.group, identity))
+            restored = dependency_cache.restore(root, args.group, identity)
+            if args.require_cache and not restored:
+                raise RuntimeError(
+                    f'No compatible dependency cache for {args.group}. '
+                    'Stopping before dependency preparation to preserve the build time allowance. '
+                    'Prepare dependencies separately, then retry on the same branch.')
+            print('Snapshot restored:', restored)
             return
         elif args.action == 'cache-key':
             value = (f'key={identity}\ndebug-key={debug_identity}\n'

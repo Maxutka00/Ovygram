@@ -8,6 +8,11 @@ on:
         type: boolean
         required: true
         default: false
+      require_dependency_cache:
+        description: Plugins mode requires compatible Release dependency caches
+        type: boolean
+        required: true
+        default: true
       mode:
         description: Inspect, verify the Python host, or build Windows
         type: choice
@@ -93,7 +98,7 @@ jobs:
         if: (inputs.mode == 'build' || inputs.mode == 'plugins')
         env:
           RESTORED_CACHE_KEY: ${{ steps.restore-foundation.outputs.cache-matched-key }}
-        run: python control/tools/ovygram/baseline.py cache-restore --group foundation --root "$env:GITHUB_WORKSPACE"
+        run: python control/tools/ovygram/baseline.py cache-restore --group foundation --root "$env:GITHUB_WORKSPACE" ${{ inputs.mode == 'plugins' && inputs.require_dependency_cache && '--require-cache' || '' }}
 
       - name: Prepare foundation dependencies
         id: prepare-foundation
@@ -127,7 +132,7 @@ jobs:
         if: (inputs.mode == 'build' || inputs.mode == 'plugins')
         env:
           RESTORED_CACHE_KEY: ${{ steps.restore-qt.outputs.cache-matched-key }}
-        run: python control/tools/ovygram/baseline.py cache-restore --group qt --root "$env:GITHUB_WORKSPACE"
+        run: python control/tools/ovygram/baseline.py cache-restore --group qt --root "$env:GITHUB_WORKSPACE" ${{ inputs.mode == 'plugins' && inputs.require_dependency_cache && '--require-cache' || '' }}
 
       - name: Prepare qt dependencies
         id: prepare-qt
@@ -162,7 +167,7 @@ jobs:
         if: (inputs.mode == 'build' || inputs.mode == 'plugins')
         env:
           RESTORED_CACHE_KEY: ${{ steps.restore-extras.outputs.cache-matched-key }}
-        run: python control/tools/ovygram/baseline.py cache-restore --group extras --root "$env:GITHUB_WORKSPACE"
+        run: python control/tools/ovygram/baseline.py cache-restore --group extras --root "$env:GITHUB_WORKSPACE" ${{ inputs.mode == 'plugins' && inputs.require_dependency_cache && '--require-cache' || '' }}
 
       - name: Prepare extras dependencies
         id: prepare-extras
