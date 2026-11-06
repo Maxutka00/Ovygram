@@ -38,6 +38,11 @@ namespace {
 
 constexpr auto kMaximumPayload = 64 * 1024 * 1024;
 
+class HookCancellation final : public std::runtime_error {
+public:
+	using std::runtime_error::runtime_error;
+};
+
 QString AccountId(const Main::Session &session) {
 	return QString::number(session.uniqueId());
 }
@@ -216,7 +221,11 @@ QJsonValue PluginClient::dispatch(QJsonObject request) {
 		QJsonDocument(request).toJson(QJsonDocument::Compact).toStdString());
 	const auto value = QJsonDocument::fromJson(QByteArray::fromStdString(response)).object();
 	if (!value.contains(u"result"_q)) {
-		throw std::runtime_error(value.value(u"error"_q).toString().toStdString());
+		const auto error = value.value(u"error"_q).toString().toStdString();
+		if (value.value(u"cancelled"_q).toBool()) {
+			throw HookCancellation(error);
+		}
+		throw std::runtime_error(error);
 	}
 	return value.value(u"result"_q);
 }
@@ -468,6 +477,20 @@ bool PluginClient::beforeRpc(
 	}
 	const auto accountId = AccountId(*owner);
 	const auto weak = base::make_weak(owner);
+	const auto reject = [&](const QString &type, const QString &message) {
+		notifyHookError(message);
+		if (auto fail = std::move(callbacks.fail)) {
+			// Complete after Sender and Histories have registered the request.
+			QTimer::singleShot(0, this, [=] {
+				if (weak) {
+					fail(
+						MTP::Error::Local(type, message),
+						MTP::Response{ {}, 0, requestId });
+				}
+			});
+		}
+		return false;
+	};
 	auto requestData = QString();
 	auto stack = QJsonArray();
 	for (const auto &[id, pending] : _pending) {
@@ -517,16 +540,10 @@ bool PluginClient::beforeRpc(
 				item->setText(std::move(text));
 			}
 		}
+	} catch (const HookCancellation &error) {
+		return reject(u"PLUGIN_CANCELLED"_q, QString::fromUtf8(error.what()));
 	} catch (const std::exception &error) {
-		const auto message = QString::fromUtf8(error.what());
-		notifyHookError(message);
-		const auto fail = std::move(callbacks.fail);
-		if (fail) {
-			crl::on_main(this, [=] {
-				fail(MTP::Error::Local(u"PLUGIN_HOOK"_q, message), MTP::Response{ {}, 0, requestId });
-			});
-		}
-		return false;
+		return reject(u"PLUGIN_HOOK"_q, QString::fromUtf8(error.what()));
 	}
 	const auto original = std::make_shared<MTP::ResponseHandler>(std::move(callbacks));
 	const auto guard = QPointer(this);
@@ -567,6 +584,10 @@ bool PluginClient::beforeRpc(
 		return original->done ? original->done(changed) : true;
 	};
 	return true;
+}
+
+bool IsPluginRpcCancelled(const MTP::Error &error) {
+	return error.code() == 0 && error.type() == u"CLIENT_PLUGIN_CANCELLED"_q;
 }
 
 bool PluginClient::afterRpc(

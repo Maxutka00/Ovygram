@@ -49,6 +49,33 @@ settingsAttentionButtonWithIcon: SettingsButton(settingsButton) {
 	textFg: attentionButtonFg;
 	textFgOver: attentionButtonFgOver;
 }
+settingsPluginImport: SettingsButton(settingsButtonLightNoIcon) {
+	height: 42px;
+}
+settingsPluginCardMargin: margins(12px, 3px, 12px, 8px);
+settingsPluginCardRadius: 10px;
+settingsPluginTextMargin: margins(14px, 0px, 14px, 8px);
+settingsPluginToggleWidth: 58px;
+settingsPluginCardAction: SettingsButton(settingsButtonLightNoIcon) {
+	textBg: transparent;
+	textBgOver: windowBg;
+	padding: margins(14px, 9px, 14px, 9px);
+	height: 40px;
+}
+settingsPluginCardTitle: SettingsButton(settingsPluginCardAction) {
+	style: TextStyle(boxTextStyle) {
+		font: font(14px semibold);
+	}
+	textFg: windowBoldFg;
+	textFgOver: windowBoldFgOver;
+}
+settingsPluginCardRemove: SettingsButton(settingsPluginCardAction) {
+	textFg: attentionButtonFg;
+	textFgOver: attentionButtonFgOver;
+}
+settingsPluginCardMeta: FlatLabel(defaultFlatLabel) {
+	textFg: windowSubTextFg;
+}
 settingsFaqKeysLegendIcon: icon {{ "menu/keyboard", menuIconColor }};
 settingsFaqKeysLegendIconOver: icon {{ "menu/keyboard", windowBoldFgOver }};
 settingsFaqKeysLegend: IconButton {

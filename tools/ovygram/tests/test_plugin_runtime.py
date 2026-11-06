@@ -60,6 +60,7 @@ class PluginRuntimeTests(unittest.TestCase):
         manager = Manager(self.profile)
         self.addCleanup(manager.shutdown)
         plugin_id = manager.install(str(EXAMPLE))
+        manager.records[plugin_id]["current"].pop("share_file")
         archive = self.root / "new.zip"
         source = EXAMPLE.read_text(encoding="utf-8").replace("1.0.0", "2.0.0")
         with zipfile.ZipFile(archive, "w") as package:
@@ -69,11 +70,22 @@ class PluginRuntimeTests(unittest.TestCase):
         manager.install(str(archive), plugin_id)
         manager.enable(plugin_id)
         self.assertEqual(manager.snapshot()["plugins"][0]["version"], "2.0.0")
+        current = manager.records[plugin_id]["current"]
+        manager.directory(current).joinpath("runtime-private.txt").write_text("local data")
+        shared = Path(json.loads(manager.dispatch(json.dumps({
+            "action": "share_file", "plugin_id": plugin_id,
+        })))["result"])
+        self.assertEqual(shared.suffix, ".zip")
+        self.assertEqual(shared.read_bytes(), archive.read_bytes())
         manager.rollback(plugin_id)
         self.assertEqual(manager.snapshot()["plugins"][0]["version"], "1.0.0")
         self.assertFalse(manager.loaded)
+        legacy_file = Path(manager.share_file(plugin_id))
+        self.assertEqual(legacy_file.read_bytes(), EXAMPLE.read_bytes())
         manager.remove(plugin_id)
         self.assertEqual(manager.snapshot()["plugins"], [])
+        self.assertFalse(shared.exists())
+        self.assertFalse(legacy_file.exists())
 
     def test_zip_with_windows_path_escape_is_rejected(self):
         manager = Manager(self.profile)
