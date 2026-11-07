@@ -95,6 +95,17 @@ void Clear(not_null<Ui::VerticalLayout*> layout) {
 	}
 }
 
+// Keeps the height of a layout while it is rebuilt. An empty layout for a
+// moment shrinks the page, and the settings scroll jumps to the top, e.g.
+// after toggling a plugin far down the list.
+[[nodiscard]] auto HoldHeight(not_null<Ui::VerticalLayout*> layout) {
+	layout->setMinimumHeight(layout->height());
+	return gsl::finally([=] {
+		layout->setMinimumHeight(0);
+		layout->resizeToWidth(layout->width());
+	});
+}
+
 void AddNotice(
 		not_null<Ui::VerticalLayout*> layout,
 		rpl::variable<QString> &notice) {
@@ -348,6 +359,7 @@ rpl::producer<> PluginDetails::sectionShowBack() {
 }
 
 void PluginDetails::refresh() {
+	const auto hold = HoldHeight(_content);
 	Clear(_content);
 	AddNotice(_content, _notice);
 	const auto result = Request({ { u"action"_q, u"snapshot"_q } }, _notice);
@@ -595,6 +607,7 @@ void Plugins::refresh() {
 }
 
 void Plugins::populate() {
+	const auto hold = HoldHeight(_content);
 	Clear(_content);
 	if (_snapshot.isEmpty()) {
 		return;

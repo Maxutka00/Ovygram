@@ -1,0 +1,97 @@
+"""«Напомнить через…» in a message's menu, with reminders that survive a restart.
+
+Shows how to:
+- add several related menu items with one handler;
+- store state as JSON in the plugin data directory and write it atomically;
+- use one periodic timer instead of a timer per reminder: it is cheap,
+  catches up after sleep or a restart, and stops on unload;
+- tell the user through Saved Messages and a dialog.
+"""
+
+import json
+import time
+import uuid
+
+from base_plugin import BasePlugin
+from desktop import client, ui
+from desktop_utils import set_timer
+from file_utils import get_plugin_data_dir
+
+__id__ = "desktop.reminders"
+__name__ = "Напоминания"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Пункты «Напомнить через…» в меню сообщения. Напоминание приходит в "
+                   "Избранное и сохраняется после перезапуска клиента.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+DELAYS = [("10 минут", 10 * 60), ("1 час", 60 * 60), ("завтра", 24 * 60 * 60)]
+CHECK_EVERY = 20  # Seconds.
+
+
+class RemindersPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.path = get_plugin_data_dir() / "reminders.json"
+        self.reminders = self.load()
+        for label, delay in DELAYS:
+            # Bind delay now: a lambda in a loop would see the last value.
+            ui.add_menu_item("message", f"Напомнить через {label}",
+                             lambda menu, delay=delay, label=label: self.add(menu, delay, label))
+        ui.add_menu_item("main", "Мои напоминания", self.show_list)
+        set_timer(CHECK_EVERY, self.check, repeat=True)
+        self.check()  # Reminders that came due while the client was closed.
+
+    def load(self):
+        try:
+            return json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+
+    def save(self):
+        temporary = self.path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(self.reminders, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(self.path)  # Never leaves a half-written file.
+
+    def add(self, menu, delay, label):
+        text = " ".join(menu.message.text.split())[:300] or "сообщение без текста"
+        self.reminders.append({
+            "id": uuid.uuid4().hex, "account_id": menu.account_id, "due": time.time() + delay,
+            "chat": menu.chat.name, "text": text,
+        })
+        self.save()
+        ui.show_dialog(f"Напомню через {label}: «{text[:80]}»", title="Напоминание")
+
+    def check(self):
+        """Runs on the main thread from the timer, so it only picks due
+        reminders and leaves sending to a background task."""
+        now = time.time()
+        due = [item for item in self.reminders if item["due"] <= now]
+        if not due:
+            return
+        self.reminders = [item for item in self.reminders if item["due"] > now]
+        self.save()
+        self.run_async(self.deliver(due))
+
+    async def deliver(self, due):
+        accounts = {account.id: account for account in await client.accounts()}
+        for item in due:
+            message = f"⏰ Напоминание из «{item['chat']}»:\n{item['text']}"
+            account = accounts.get(item["account_id"])
+            try:
+                saved = await client.get_chat(account, account.user_id)
+                await client.send_message(saved, message)
+            except Exception as error:  # Account closed or no network.
+                self.log(f"Напоминание не отправлено: {error}")
+                ui.show_dialog(message, title="Напоминание")
+
+    def show_list(self, menu):
+        if not self.reminders:
+            ui.show_dialog("Напоминаний нет.", title="Напоминания")
+            return
+        rows = []
+        for item in sorted(self.reminders, key=lambda item: item["due"]):
+            when = time.strftime("%d.%m %H:%M", time.localtime(item["due"]))
+            rows.append(ui.Text(f"{when} — {item['chat']}: {item['text'][:60]}"))
+        ui.show_dialog(ui.Column(*rows), title="Напоминания", width=460)

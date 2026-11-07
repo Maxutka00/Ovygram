@@ -164,6 +164,12 @@ and add `-D OVYGRAM_SYSTEM_PYTHON=ON` to the configuration. The option is off by
 default. Such a build is tied to the Python version of the system it was built
 on, so it suits local use rather than distribution.
 
+### Packaging
+
+`tools/ovygram/package_linux.py --build out/Release` packs the build into a
+`.tar.xz` for Arch Linux and the `ovygram-bin` package, see
+[releasing.md](releasing.md#linux).
+
 ### System libraries
 
 The `_ssl`, `_ctypes` and `_sqlite3` modules depend on the system OpenSSL, libffi

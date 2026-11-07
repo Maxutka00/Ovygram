@@ -1,0 +1,67 @@
+"""An away auto-reply in private chats, switched per account.
+
+Shows how to:
+- react to new messages with an async event handler;
+- filter carefully: only incoming messages in private chats, never yourself;
+- rate-limit: one reply per chat per period, so two auto-replies can't
+  talk to each other forever;
+- keep settings per account (get/set_account_setting) and toggle them from
+  the main menu; settings are written on the main thread only.
+"""
+
+import time
+
+from base_plugin import BasePlugin
+from desktop import client, ui
+from ui.settings import Input, Selector
+
+__id__ = "desktop.away_reply"
+__name__ = "Автоответ"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Отвечает в личных чатах, пока вы отсутствуете. Включается отдельно для "
+                   "каждого аккаунта из главного меню.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+PERIODS = [1, 6, 24]  # Hours between replies in one chat.
+CHAT_ID_LIMIT = 1 << 48  # Ids of groups and channels are above it, see desktop.client.
+
+
+class AwayReplyPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.replied = {}  # (account, chat) -> time of the last reply.
+        self.subscribe("new_message", self.on_message)
+        ui.add_menu_item("main", "Автоответ: вкл/выкл", self.toggle)
+
+    def create_settings(self):
+        return [
+            Input("text", "Текст ответа", "Сейчас не на связи, отвечу позже."),
+            Selector("period", "Не чаще, чем раз в", [f"{hours} ч" for hours in PERIODS], 1),
+        ]
+
+    def toggle(self, menu):
+        # Menu callbacks run on the main thread, so settings can be written.
+        enabled = not self.get_account_setting(menu.account_id, "enabled", False)
+        self.set_account_setting(menu.account_id, "enabled", enabled)
+        ui.show_dialog("Автоответ включён для этого аккаунта." if enabled
+                       else "Автоответ выключен для этого аккаунта.", title="Автоответ")
+
+    async def on_message(self, event):
+        message = event.message
+        if (message is None or message.outgoing or event.chat_id is None
+                or event.chat_id >= CHAT_ID_LIMIT
+                or not self.get_account_setting(event.account_id, "enabled", False)):
+            return
+        accounts = {account.id: account for account in await client.accounts()}
+        account = accounts.get(event.account_id)
+        if account is None or event.chat_id == account.user_id:
+            return  # Saved Messages.
+        key = (event.account_id, event.chat_id)
+        period = PERIODS[self.get_setting("period", 1)] * 3600
+        if time.time() - self.replied.get(key, 0) < period:
+            return
+        self.replied[key] = time.time()
+        chat = await client.get_chat(event.account_id, event.chat_id)
+        await client.send_message(chat, self.get_setting("text", "Сейчас не на связи, отвечу позже."))
