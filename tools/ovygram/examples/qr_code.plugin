@@ -1,0 +1,37 @@
+import uuid
+
+import qrcode
+
+from base_plugin import BasePlugin
+from desktop import ui
+from file_utils import get_plugin_data_dir
+
+__id__ = "desktop.qr_code"
+__name__ = "QR-код"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Показывает QR-код текста сообщения из его контекстного меню. "
+                   "Пример плагина со сторонними библиотеками.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+# qrcode is pure Python, Pillow is a binary wheel: the client installs both
+# when the plugin is enabled.
+__requirements__ = ["qrcode[pil]>=8.2,<9", "pillow>=11"]
+
+
+class QrCodePlugin(BasePlugin):
+    def on_plugin_load(self):
+        ui.add_menu_item("message", "QR-код текста", self.show_code)
+
+    def show_code(self, menu):
+        text = menu.message.text.strip()
+        if not text:
+            ui.show_dialog("В сообщении нет текста.", title="QR-код")
+            return
+        directory = get_plugin_data_dir()
+        for old in directory.glob("qr-*.png"):
+            old.unlink(missing_ok=True)
+        path = directory / f"qr-{uuid.uuid4().hex}.png"
+        qrcode.make(text, border=2).save(path)
+        ui.show_dialog(ui.Column(ui.Image(str(path), height=320), ui.Text(text[:200])),
+                       title="QR-код", width=380)
