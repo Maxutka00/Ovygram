@@ -24,5 +24,9 @@ constexpr auto AppName = "Ovygram"_cs;
 constexpr auto AppFile = "Ovygram"_cs;
 constexpr auto AppVersion = 7003005;
 constexpr auto AppVersionStr = "7.3.5";
+// Ovygram's own version, shown as "<Ovygram>-<Telegram>". AppVersion and
+// AppVersionStr stay the Telegram base: the server, changelogs and the
+// upstream version scripts rely on them.
+constexpr auto OvygramVersionStr = "0.1.0";
 constexpr auto AppBetaVersion = false;
 constexpr auto AppAlphaVersion = TDESKTOP_ALPHA_VERSION;

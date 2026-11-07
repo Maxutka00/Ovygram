@@ -2741,7 +2741,7 @@ else()
     set(bundle_identifier_plist ${bundle_identifier})
 endif()
 
-if (WIN32)
+if (WIN32 OR LINUX)
     set(output_name "Ovygram")
 endif()
 
