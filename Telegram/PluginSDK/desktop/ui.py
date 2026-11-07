@@ -259,6 +259,21 @@ class ChatBar(Surface):
         return {"account_id": self.account_id, "chat_id": self.chat_id}
 
 
+class Section(Surface):
+    """A page in the main column of the active window, in place of a chat.
+
+    It has a back button and the title on top, and the content scrolls.
+    Back and the window history work as for Telegram's own pages: the user
+    can open a chat and come back. The section is closed by close(), when
+    the window history drops it (on_close is called then) or on unload.
+    """
+
+    kind = "section"
+
+    def __init__(self, content, title="", on_close=None):
+        super().__init__(content, title, on_close=on_close)
+
+
 # Built-in Telegram widgets a plugin can change. The names stay the same
 # across Telegram updates; each one may exist once per open window.
 ELEMENTS = (
@@ -401,6 +416,8 @@ class WidgetRule:
             runtime.submit_ui(self.owner, "ui.compose.watch", rule_id=self.id, enabled=False)
         elif self.method == "ui.menu.add":
             runtime.submit_ui(self.owner, "ui.menu.remove", rule_id=self.id)
+        elif self.method.startswith("ui.native."):
+            runtime.submit_ui(self.owner, "ui.native.disconnect", rule_id=self.id)
         else:
             runtime.submit_ui(self.owner, "ui.widgets.unrule", rule_id=self.id)
 

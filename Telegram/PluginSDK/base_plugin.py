@@ -1,5 +1,8 @@
 """Plugin lifecycle and persistent settings for Ovygram."""
 
+# Also importable from here, as in Android plugins.
+from hook_utils import HookResult, HookStrategy  # noqa: F401
+
 
 class BasePlugin:
     def on_plugin_load(self):
