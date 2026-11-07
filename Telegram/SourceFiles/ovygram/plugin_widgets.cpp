@@ -51,6 +51,7 @@ struct Rule {
 struct KeyRule {
 	QString pluginId;
 	QKeySequence sequence;
+	QString element; // Only while the focus is inside this element.
 	bool replace = false;
 };
 
@@ -242,9 +243,52 @@ void Send(const QString &pluginId, const QString &type, const QString &ruleId) {
 	}
 }
 
+[[nodiscard]] bool InsideElement(QObject *watched, const QString &element) {
+	if (element.isEmpty()) {
+		return true;
+	}
+	for (auto widget = qobject_cast<QWidget*>(watched); widget;
+			widget = widget->parentWidget()) {
+		if (widget->property("_ovygram_element").toString() == element) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Key rules that match this key event in this widget.
+[[nodiscard]] std::vector<std::pair<QString, QString>> MatchingKeys(
+		QObject *watched,
+		QKeyEvent *key,
+		bool &replace) {
+	auto result = std::vector<std::pair<QString, QString>>();
+	const auto pressed = QKeySequence(key->keyCombination());
+	for (const auto &[id, rule] : Get().keys) {
+		if (rule.sequence.matches(pressed) == QKeySequence::ExactMatch
+			&& InsideElement(watched, rule.element)) {
+			replace = replace || rule.replace;
+			result.emplace_back(rule.pluginId, id);
+		}
+	}
+	return result;
+}
+
 bool Filter::eventFilter(QObject *watched, QEvent *e) {
 	const auto type = e->type();
 	auto &state = Get();
+	if (type == QEvent::ShortcutOverride && !state.keys.empty()) {
+		// Accepting the override delivers the key as a KeyPress instead of
+		// triggering a Telegram shortcut, so a replacing rule wins.
+		auto replace = false;
+		const auto key = static_cast<QKeyEvent*>(e);
+		if (qobject_cast<QWidget*>(watched)
+			&& !MatchingKeys(watched, key, replace).empty()
+			&& replace) {
+			e->accept();
+			return true;
+		}
+		return false;
+	}
 	if (type == QEvent::Show) {
 		if (const auto widget = qobject_cast<QWidget*>(watched)) {
 			if (!state.rules.empty() && HiddenByRule(widget)) {
@@ -296,15 +340,8 @@ bool Filter::eventFilter(QObject *watched, QEvent *e) {
 			return false;
 		}
 		state.lastKey = identity;
-		const auto pressed = QKeySequence(key->keyCombination());
 		auto replace = false;
-		auto matched = std::vector<std::pair<QString, QString>>();
-		for (const auto &[id, rule] : state.keys) {
-			if (rule.sequence.matches(pressed) == QKeySequence::ExactMatch) {
-				replace = replace || rule.replace;
-				matched.emplace_back(rule.pluginId, id);
-			}
-		}
+		const auto matched = MatchingKeys(watched, key, replace);
 		if (!matched.empty()) {
 			for (const auto &[pluginId, id] : matched) {
 				Send(pluginId, u"key"_q, id);
@@ -452,6 +489,7 @@ void Handle(const QJsonObject &command) {
 		state.keys[ruleId] = KeyRule{
 			.pluginId = pluginId,
 			.sequence = sequence,
+			.element = command.value(u"element"_q).toString(),
 			.replace = command.value(u"replace"_q).toBool(),
 		};
 		EnsureFilter();

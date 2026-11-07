@@ -21,6 +21,8 @@ target_sources(Telegram PRIVATE
     SourceFiles/core/plugin_runtime_api.h
     SourceFiles/core/plugin_runtime.h
     SourceFiles/ovygram/chat_bars.h
+    SourceFiles/ovygram/chat_decorations.cpp
+    SourceFiles/ovygram/chat_decorations.h
     SourceFiles/ovygram/plugin_elements.cpp
     SourceFiles/ovygram/plugin_elements.h
     SourceFiles/ovygram/plugin_ui.cpp

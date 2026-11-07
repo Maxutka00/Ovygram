@@ -51,6 +51,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/chat_decorations.h"
+#endif // OVYGRAM_ENABLED
+
 namespace Dialogs::Ui {
 
 const char kOptionDialogsMuteIcon[] = "dialogs-mute-icon";
@@ -1265,6 +1269,13 @@ void RowPainter::Paint(
 		badgesState,
 		flags,
 		paintItemCallback);
+#ifdef OVYGRAM_ENABLED
+	Ovygram::PaintChatRow(
+		p,
+		peer,
+		QRect(0, 0, context.width, row->height()),
+		context.active);
+#endif // OVYGRAM_ENABLED
 }
 
 void RowPainter::Paint(

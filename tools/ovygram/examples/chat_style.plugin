@@ -1,0 +1,54 @@
+from base_plugin import BasePlugin
+from desktop import client, ui
+from desktop_utils import run_on_ui
+from ui.settings import Switch
+
+__id__ = "desktop.chat_style"
+__name__ = "Список чатов и строка ввода"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Метка на открытом чате в списке, скрытая кнопка эмодзи и "
+                   "Ctrl+Alt+U, который делает текст в поле заглавным.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class ChatStylePlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.mark = None
+        self.subscribe("chat_changed", lambda event: self.mark_chat(event.chat))
+        self.run_async(self.mark_current_chat())
+        if self.get_setting("hide_emoji", True):
+            ui.element("compose.emoji").hide()
+        # Ctrl+Shift+U is taken by IBus Unicode input on Linux.
+        ui.on_key("Ctrl+Alt+U", self.uppercase, replace=True, element="compose.field")
+
+    async def mark_current_chat(self):
+        for account in await client.accounts():
+            if account.active:
+                chat = await client.current_chat(account.id)
+                await run_on_ui(lambda: self.mark_chat(chat))
+                return
+
+    def mark_chat(self, chat):
+        """A teal stripe on the left edge and a dot near the right edge."""
+        if self.mark is not None:
+            self.mark.remove()
+            self.mark = None
+        if chat is None:
+            return
+        self.mark = ui.decorate_chat(chat, [
+            ui.fill_rect(0, 8, 4, 46, "#00bcd4", radius=2),
+            ui.ellipse(-22, 10, 10, 10, "#00bcd4"),
+        ], background="#1500bcd4")
+
+    def uppercase(self):
+        async def run():
+            text = await ui.compose_text()
+            if text:
+                await run_on_ui(lambda: ui.set_compose_text(text.upper()))
+        self.run_async(run())
+
+    def create_settings(self):
+        return [Switch("hide_emoji", "Скрыть кнопку эмодзи", True)]

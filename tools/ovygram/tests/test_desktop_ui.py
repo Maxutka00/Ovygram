@@ -314,6 +314,132 @@ class DesktopUiTests(unittest.TestCase):
         command = self.commands_list()[-1]
         self.assertEqual((command["method"], command["text"]), ("ui.clipboard", "дерево"))
 
+    def test_chat_decorations(self):
+        from desktop.models import chat_from_native
+        chat = chat_from_native(self.native_chat())
+        mark = self.as_plugin("plugin.a", lambda: ui.decorate_chat(
+            chat, [ui.ellipse(-22, 10, 10, 10, "#00bcd4")], background="#1500bcd4"))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["account_id"], command["chat_id"], command["background"]),
+                         ("ui.decoration.set", "42", "777", "#1500bcd4"))
+        self.assertEqual(command["commands"][0]["x"], -22)
+        self.as_plugin("plugin.a", lambda: mark.update([], background=None))
+        self.as_plugin("plugin.a", mark.remove)
+        self.assertEqual([item["method"] for item in self.commands_list()],
+                         ["ui.decoration.set", "ui.decoration.remove"])
+        every = self.as_plugin("plugin.a", lambda: ui.decorate_chat("*", account="42"))
+        self.assertEqual(self.commands_list()[-1]["chat_id"], "*")
+        for bad in (lambda: ui.decorate_chat("*"), lambda: ui.decorate_chat("777"),
+                    lambda: ui.decorate_chat(chat, background="red")):
+            with self.assertRaises((ValueError, TypeError)):
+                self.as_plugin("plugin.a", bad)
+
+    def test_compose_field_api(self):
+        self.as_plugin("plugin.a", lambda: ui.set_compose_text("Привет"))
+        self.as_plugin("plugin.a", lambda: ui.insert_compose_text("!"))
+        self.assertEqual([(item["method"], item["text"]) for item in self.commands_list()],
+                         [("ui.compose.set", "Привет"), ("ui.compose.insert", "!")])
+        self.as_plugin("plugin.a", lambda: ui.element("compose.emoji").hide())
+
+        async def read():
+            return await ui.compose_text()
+
+        future = self.runtime.schedule(self.owners["plugin.a"], read())
+        while True:
+            request = self.commands.get(timeout=2)
+            if request["method"] == "compose.get_text":
+                break
+        self.runtime.complete({"id": request["id"], "result": "текст"})
+        self.assertEqual(future.result(timeout=2), "текст")
+
+    def test_chat_style_example_loads(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/chat_style.plugin"))
+        self.commands_list()
+        self.manager.enable(plugin_id)
+        methods = [item["method"] for item in self.commands_list()]
+        self.assertIn("ui.element.hide", methods)
+        self.assertIn("ui.keys.add", methods)
+        self.runtime.native_event({"point": "chat_changed", "account_id": "42", "chat": self.native_chat()})
+        self.assertEqual(self.commands_list()[-1]["method"], "ui.decoration.set")
+        self.assertNotIn(plugin_id, self.manager.errors)
+
+    def load_math(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/math_autocomplete.plugin"))
+        self.manager.enable(plugin_id)
+        watch = [item for item in self.commands_list() if item["method"] == "ui.compose.watch"]
+        self.assertEqual(len(watch), 1)
+        instance = self.manager.loaded[plugin_id][0]
+        return plugin_id, instance, watch[0]["rule_id"]
+
+    def change(self, plugin_id, rule_id, text, cursor, selection=None):
+        start, end = selection or (cursor, cursor)
+        self.event(plugin_id=plugin_id, type="compose_changed", rule_id=rule_id,
+                   value={"text": text, "cursor": cursor, "selection_start": start, "selection_end": end})
+
+    def answer_state(self, text, cursor, selection=None):
+        start, end = selection or (cursor, cursor)
+        while True:
+            request = self.commands.get(timeout=2)
+            if request["method"] == "compose.get_state":
+                break
+        self.runtime.complete({"id": request["id"], "result": {
+            "text": text, "cursor": cursor, "selection_start": start, "selection_end": end}})
+
+    def wait_for(self, method):
+        for _ in range(200):
+            items = [item for item in self.commands_list() if item["method"] == method]
+            if items:
+                return items
+            __import__("time").sleep(0.01)
+        self.fail(f"{method} was not sent")
+
+    def test_math_evaluation(self):
+        namespace = {}
+        source = (ROOT / "tools/ovygram/examples/math_autocomplete.plugin").read_text(encoding="utf-8")
+        exec(compile(source.split("class MathAutocompletePlugin")[0].replace(
+            "from base_plugin import BasePlugin\nfrom desktop import ui\n", ""), "math", "exec"), namespace)
+        evaluate = namespace["evaluate"]
+        self.assertEqual(evaluate("1+3"), "4")
+        self.assertEqual(evaluate("2*(3+4)"), "14")
+        self.assertEqual(evaluate("7/2"), "3.5")
+        self.assertEqual(evaluate("1,5*2"), "3")
+        self.assertEqual(evaluate("-2**3"), "-8")
+        for bad in ("5", "__import__('os')", "2**1000", "a+1"):
+            with self.assertRaises((ValueError, SyntaxError)):
+                evaluate(bad)
+
+    def test_math_suggestion_accept_and_backspace(self):
+        plugin_id, instance, rule_id = self.load_math()
+        self.change(plugin_id, rule_id, "1+3=", 4)
+        sent = self.commands_list()
+        replace = [item for item in sent if item["method"] == "ui.compose.replace"][0]
+        self.assertEqual((replace["start"], replace["end"], replace["text"], replace["select"]), (4, 4, "4", True))
+        space = [item for item in sent if item["method"] == "ui.keys.add"][0]
+        self.assertEqual((space["sequence"], space["element"], space["replace"]), ("Space", "compose.field", True))
+        self.change(plugin_id, rule_id, "1+3=4", 4, (4, 5))  # Our own edit: ignored.
+        self.assertEqual(instance.suggestion, (4, 5))
+        self.event(plugin_id=plugin_id, type="key", rule_id=space["rule_id"])
+        self.answer_state("1+3=4", 5, (4, 5))
+        accept = self.wait_for("ui.compose.replace")[0]
+        self.assertEqual((accept["start"], accept["end"], accept["text"]), (5, 5, " "))
+        self.assertEqual(instance.accepted, (4, 6))
+        backspace = [item for item in self.commands_list() if item["method"] == "ui.keys.add"]
+        self.change(plugin_id, rule_id, "1+3=4 ", 6)  # Our own edit: ignored.
+        self.assertIsNotNone(instance.backspace_rule)
+        self.event(plugin_id=plugin_id, type="key", rule_id=instance.backspace_rule.id)
+        self.answer_state("1+3=4 ", 6)
+        removal = self.wait_for("ui.compose.replace")[0]
+        self.assertEqual((removal["start"], removal["end"], removal["text"]), (4, 6, ""))
+        self.assertNotIn(plugin_id, self.manager.errors)
+
+    def test_math_suggestion_dropped_by_typing(self):
+        plugin_id, instance, rule_id = self.load_math()
+        self.change(plugin_id, rule_id, "2*5=", 4)
+        self.assertEqual(instance.suggestion, (4, 6))
+        self.change(plugin_id, rule_id, "2*5=x", 5)  # A typed char replaced the selection.
+        self.assertIsNone(instance.suggestion)
+        self.assertIn("ui.widgets.unrule", [item["method"] for item in self.commands_list()])
+
 
 if __name__ == "__main__":
     unittest.main()

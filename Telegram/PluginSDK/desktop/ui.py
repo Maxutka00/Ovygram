@@ -263,6 +263,11 @@ ELEMENTS = (
     "chat.top_bar.search",
     "chat.top_bar.info",
     "chat.top_bar.menu",
+    # Hiding compose.attach leaves a gap: Telegram reserves its width.
+    "compose.attach",
+    "compose.emoji",
+    "compose.send",
+    "compose.field",
 )
 
 
@@ -373,6 +378,8 @@ class WidgetRule:
     def __init__(self, owner, method, callback=None, **parameters):
         self.owner = owner
         self.id = _identity()
+        self.method = method
+        self.removed = False
         runtime = owner.manager.runtime
         if callback is not None:
             with runtime.lock:
@@ -382,8 +389,14 @@ class WidgetRule:
     def remove(self):
         runtime = self.owner.manager.runtime
         with runtime.lock:
-            runtime.widget_rules.pop(self.id, None)
-        if self.owner.active:
+            if runtime.widget_rules.pop(self.id, None) is None and self.removed:
+                return
+        self.removed = True
+        if not self.owner.active:
+            return
+        if self.method == "ui.compose.watch":
+            runtime.submit_ui(self.owner, "ui.compose.watch", rule_id=self.id, enabled=False)
+        else:
             runtime.submit_ui(self.owner, "ui.widgets.unrule", rule_id=self.id)
 
 
@@ -423,14 +436,107 @@ def on_widget_click(callback, replace=False, **selector):
                       replace=bool(replace), selector=_selector(selector))
 
 
-def on_key(sequence, callback, replace=False):
-    """Calls callback() on a key combination like "Ctrl+Shift+K". With
-    replace=True Telegram doesn't receive the key."""
+def on_key(sequence, callback, replace=False, element=None):
+    """Calls callback() on a key combination like "Ctrl+Alt+K". With
+    replace=True Telegram doesn't receive the key, and the rule also wins
+    over Telegram's own shortcuts. With element, e.g. "compose.field", the
+    rule works only while the focus is inside that element. Keys taken by
+    the system or the input method (e.g. Ctrl+Shift+U in IBus) never reach
+    Telegram."""
     if not isinstance(sequence, str) or not sequence:
-        raise ValueError("Ожидается сочетание клавиш, например Ctrl+Shift+K.")
+        raise ValueError("Ожидается сочетание клавиш, например Ctrl+Alt+K.")
     if not callable(callback):
         raise TypeError("callback должен быть функцией.")
-    return WidgetRule(context(), "ui.keys.add", callback, sequence=sequence, replace=bool(replace))
+    if element is not None and element not in ELEMENTS:
+        raise ValueError(f"Неизвестный элемент {element!r}.")
+    return WidgetRule(context(), "ui.keys.add", callback, sequence=sequence,
+                      replace=bool(replace), element=element or "")
+
+
+class ChatDecoration:
+    """Draw commands painted over a chat's row in the chat list.
+
+    Coordinates are relative to the row; negative x or y count from its
+    right or bottom edge, e.g. fill_rect(-28, 8, 20, 20, ...) is a square
+    near the right edge. background tints the whole row, except when the
+    chat is open. Undone by remove() or when the plugin is unloaded."""
+
+    def __init__(self, owner, account_id, chat_id, commands, background):
+        self.owner = owner
+        self.id = _identity()
+        self.account_id = account_id
+        self.chat_id = chat_id
+        self.update(commands, background)
+
+    def update(self, commands=(), background=None):
+        if background is not None and (not isinstance(background, str) or not background.startswith("#")):
+            raise ValueError("background задаётся строкой #rrggbb или #aarrggbb.")
+        self.owner.manager.runtime.submit_ui(
+            self.owner, "ui.decoration.set", decoration_id=self.id, account_id=self.account_id,
+            chat_id=self.chat_id, commands=list(commands), background=background)
+
+    def remove(self):
+        if self.owner.active:
+            self.owner.manager.runtime.submit_ui(self.owner, "ui.decoration.remove", decoration_id=self.id)
+
+
+def decorate_chat(chat, commands=(), background=None, account=None):
+    """Decorates one chat's row, or every chat of an account when chat is
+    "*" and account is given (an Account or account ID)."""
+    if chat == "*":
+        account_id = getattr(account, "id", account)
+        if not isinstance(account_id, str) or not account_id:
+            raise ValueError('Для chat="*" укажи account.')
+        return ChatDecoration(context(), account_id, "*", commands, background)
+    account_id = getattr(chat, "account_id", None)
+    chat_id = getattr(chat, "id", None)
+    if not account_id or chat_id is None:
+        raise TypeError('decorate_chat принимает Chat из desktop.client или "*".')
+    return ChatDecoration(context(), str(account_id), str(chat_id), commands, background)
+
+
+def on_compose_change(callback):
+    """Calls callback(state) when the user edits the message field. state
+    is a dict with text, cursor, selection_start and selection_end; the
+    positions index state["text"]. Returns a rule with remove()."""
+    if not callable(callback):
+        raise TypeError("callback должен быть функцией.")
+    return WidgetRule(context(), "ui.compose.watch", callback, enabled=True)
+
+
+async def compose_state():
+    """The same state dict for the message field in the active window, or None."""
+    owner = context()
+    return await owner.manager.runtime.request("compose.get_state")
+
+
+def replace_compose_text(start, end, text, select=False):
+    """Replaces text between positions start and end of the message field,
+    keeping the formatting of the rest. With select=True the inserted text
+    stays selected, like an inline suggestion."""
+    if type(start) is not int or type(end) is not int or not 0 <= start <= end:
+        raise ValueError("Ожидаются позиции 0 <= start <= end.")
+    owner = context()
+    owner.manager.runtime.submit_ui(owner, "ui.compose.replace", start=start, end=end,
+                                    text=str(text), select=bool(select))
+
+
+async def compose_text():
+    """Text of the message field in the active window, or None."""
+    owner = context()
+    return await owner.manager.runtime.request("compose.get_text")
+
+
+def set_compose_text(text):
+    """Replaces the text of the message field in the active window."""
+    owner = context()
+    owner.manager.runtime.submit_ui(owner, "ui.compose.set", text=str(text))
+
+
+def insert_compose_text(text):
+    """Inserts text at the cursor of the message field in the active window."""
+    owner = context()
+    owner.manager.runtime.submit_ui(owner, "ui.compose.insert", text=str(text))
 
 
 def set_clipboard(text):

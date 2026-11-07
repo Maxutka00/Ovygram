@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QtCore/QJsonObject>
+#include <QtCore/QJsonValue>
 
 #include <functional>
 #include <initializer_list>
@@ -26,6 +27,9 @@ namespace Elements {
 
 void SetEventSender(std::function<void(QJsonObject)> send);
 void Handle(const QJsonObject &command);
+
+// Requests with a reply: "compose.get_text".
+[[nodiscard]] QJsonValue Request(const QJsonObject &command);
 void RemovePlugin(const QString &pluginId);
 
 } // namespace Elements

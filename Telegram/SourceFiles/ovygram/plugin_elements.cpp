@@ -1,6 +1,11 @@
 #include "ovygram/plugin_elements.h"
 
 #include "ui/style/style_core.h"
+#include "ui/widgets/fields/input_field.h"
+
+#include <QtGui/QTextCursor>
+#include <QtGui/QTextDocument>
+#include <QtWidgets/QTextEdit>
 #include "ui/style/style_core_palette.h"
 
 #include <QtCore/QCoreApplication>
@@ -8,6 +13,7 @@
 #include <QtGui/QColor>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QResizeEvent>
+#include <QtWidgets/QApplication>
 #include <QtWidgets/QWidget>
 
 #include <map>
@@ -37,6 +43,7 @@ protected:
 };
 
 struct State {
+	std::map<QString, QString> composeWatchers; // Rule ID -> plugin ID.
 	std::vector<Element> elements;
 	std::map<QString, Rules> rules;
 	std::function<void(QJsonObject)> send;
@@ -168,6 +175,66 @@ bool Filter::eventFilter(QObject *watched, QEvent *e) {
 	return false;
 }
 
+// The element shown in the active window, or any shown one.
+[[nodiscard]] QWidget *FindShown(const QString &name) {
+	Cleanup();
+	auto fallback = (QWidget*)nullptr;
+	for (const auto &element : Get().elements) {
+		const auto widget = element.widget.data();
+		if (element.name != name || !widget || !widget->isVisible()) {
+			continue;
+		} else if (widget->isActiveWindow()) {
+			return widget;
+		} else if (!fallback) {
+			fallback = widget;
+		}
+	}
+	return fallback;
+}
+
+// Positions are QTextDocument positions, and text is the document text, so
+// the positions index it (custom emoji are U+FFFC there).
+[[nodiscard]] QJsonObject FieldState(not_null<Ui::InputField*> field) {
+	const auto cursor = field->textCursor();
+	return {
+		{ u"text"_q, field->rawTextEdit()->toPlainText() },
+		{ u"cursor"_q, cursor.position() },
+		{ u"selection_start"_q, cursor.selectionStart() },
+		{ u"selection_end"_q, cursor.selectionEnd() },
+	};
+}
+
+void WatchField(not_null<Ui::InputField*> field) {
+	field->changes() | rpl::on_next([=] {
+		auto &state = Get();
+		// Only edits by the user: the focus is on the inner QTextEdit.
+		if (state.composeWatchers.empty()
+			|| !state.send
+			|| !field->rawTextEdit()->hasFocus()) {
+			return;
+		}
+		const auto value = FieldState(field);
+		const auto watchers = state.composeWatchers;
+		for (const auto &[ruleId, pluginId] : watchers) {
+			state.send(QJsonObject{
+				{ u"plugin_id"_q, pluginId },
+				{ u"type"_q, u"compose_changed"_q },
+				{ u"rule_id"_q, ruleId },
+				{ u"value"_q, value },
+			});
+		}
+	}, field->lifetime());
+}
+
+[[nodiscard]] Ui::InputField *ComposeField() {
+	const auto result = dynamic_cast<Ui::InputField*>(
+		FindShown(u"compose.field"_q));
+	if (!result) {
+		throw std::runtime_error("No message field is shown.");
+	}
+	return result;
+}
+
 void SetColors(const QString &pluginId, const QJsonObject &colors) {
 	auto &state = Get();
 	if (!state.palette) {
@@ -218,6 +285,9 @@ void RegisterElements(
 			widget->installEventFilter(&state.filter);
 			// Lets generic widget selectors match by element name.
 			widget->setProperty("_ovygram_element", QString::fromLatin1(name));
+			if (const auto field = dynamic_cast<Ui::InputField*>(widget)) {
+				WatchField(field);
+			}
 		}
 	}
 }
@@ -256,6 +326,39 @@ void Handle(const QJsonObject &command) {
 		} else {
 			clicks.erase(pluginId);
 		}
+	} else if (method == u"ui.compose.set"_q) {
+		const auto field = ComposeField();
+		const auto text = command.value(u"text"_q).toString();
+		field->setTextWithTags({ text, {} });
+		field->setCursorPosition(text.size());
+		field->setFocus();
+	} else if (method == u"ui.compose.insert"_q) {
+		const auto field = ComposeField();
+		field->insertTag(command.value(u"text"_q).toString());
+		field->setFocus();
+	} else if (method == u"ui.compose.replace"_q) {
+		const auto field = ComposeField();
+		const auto edit = field->rawTextEdit();
+		auto cursor = edit->textCursor();
+		const auto length = edit->document()->characterCount() - 1;
+		const auto from = std::clamp(command.value(u"start"_q).toInt(), 0, length);
+		const auto till = std::clamp(command.value(u"end"_q).toInt(), from, length);
+		const auto text = command.value(u"text"_q).toString();
+		cursor.setPosition(from);
+		cursor.setPosition(till, QTextCursor::KeepAnchor);
+		cursor.insertText(text);
+		if (command.value(u"select"_q).toBool()) {
+			cursor.setPosition(from);
+			cursor.setPosition(from + int(text.size()), QTextCursor::KeepAnchor);
+		}
+		edit->setTextCursor(cursor);
+	} else if (method == u"ui.compose.watch"_q) {
+		const auto ruleId = command.value(u"rule_id"_q).toString();
+		if (command.value(u"enabled"_q).toBool()) {
+			Get().composeWatchers[ruleId] = pluginId;
+		} else {
+			Get().composeWatchers.erase(ruleId);
+		}
 	} else if (method == u"ui.palette"_q) {
 		if (command.value(u"reset"_q).toBool()) {
 			ResetColors(pluginId);
@@ -267,7 +370,24 @@ void Handle(const QJsonObject &command) {
 	}
 }
 
+QJsonValue Request(const QJsonObject &command) {
+	const auto method = command.value(u"method"_q).toString();
+	const auto field = dynamic_cast<Ui::InputField*>(
+		FindShown(u"compose.field"_q));
+	if (method == u"compose.get_text"_q) {
+		return field
+			? QJsonValue(field->getTextWithTags().text)
+			: QJsonValue(QJsonValue::Null);
+	} else if (method == u"compose.get_state"_q) {
+		return field ? QJsonValue(FieldState(field)) : QJsonValue(QJsonValue::Null);
+	}
+	throw std::runtime_error("Unknown element request.");
+}
+
 void RemovePlugin(const QString &pluginId) {
+	std::erase_if(Get().composeWatchers, [&](const auto &entry) {
+		return entry.second == pluginId;
+	});
 	auto changed = std::vector<QString>();
 	for (auto &[name, rules] : Get().rules) {
 		rules.clicks.erase(pluginId);

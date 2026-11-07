@@ -323,7 +323,7 @@ class Runtime:
         if event.get("type") == "element_click":
             self.element_click(event)
             return
-        if event.get("type") in ("widget_click", "key"):
+        if event.get("type") in ("widget_click", "key", "compose_changed"):
             self.widget_rule_event(event)
             return
         with self.lock:
@@ -387,7 +387,8 @@ class Runtime:
         if not owner.active or owner.plugin_id != event.get("plugin_id"):
             return
         try:
-            result = self.call(owner, callback)
+            value = event.get("value")
+            result = self.call(owner, callback) if value is None else self.call(owner, callback, value)
             if inspect.iscoroutine(result):
                 self.schedule(owner, result)
         except BaseException as error:

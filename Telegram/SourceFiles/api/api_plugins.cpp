@@ -19,6 +19,7 @@
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "mtproto/facade.h"
+#include "ovygram/plugin_elements.h"
 #include "ovygram/plugin_ui.h"
 #include "ovygram/plugin_widgets.h"
 #include "ui/image/image_location.h"
@@ -307,7 +308,10 @@ void PluginClient::receive(const QByteArray &request) {
 			}).toBool()) {
 			return;
 		}
-		if (method.startsWith(u"widgets."_q)) {
+		if (method.startsWith(u"compose."_q)) {
+			reply(id, Ovygram::Elements::Request(command));
+			return;
+		} else if (method.startsWith(u"widgets."_q)) {
 			reply(id, Ovygram::Widgets::Request(command));
 			return;
 		} else if (method == u"python_ui"_q) {
