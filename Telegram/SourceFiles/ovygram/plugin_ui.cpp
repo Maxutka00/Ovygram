@@ -5,8 +5,10 @@
 #include "ovygram/chat_list_filter.h"
 #include "ovygram/message_decorations.h"
 #include "ovygram/plugin_elements.h"
+#include "ovygram/plugin_paint.h"
 #include "ovygram/plugin_widgets.h"
 
+#include "base/algorithm.h"
 #include "base/unique_qptr.h"
 #include "core/application.h"
 #include "data/data_peer.h"
@@ -39,6 +41,7 @@
 #include <algorithm>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace Ovygram {
 namespace {
@@ -46,6 +49,7 @@ namespace {
 constexpr auto kMaximumDepth = 32;
 constexpr auto kMaximumNodes = 2000;
 constexpr auto kMaximumCanvasHeight = 4096;
+constexpr auto kMaximumCanvasOps = 2000;
 constexpr auto kRowSkip = 8;
 constexpr auto kColumnSkip = 6;
 constexpr auto kBarPadding = 6;
@@ -69,14 +73,6 @@ PluginUi *GlobalInstance = nullptr;
 	return *result;
 }
 
-[[nodiscard]] QColor ParseColor(const QJsonValue &value) {
-	const auto result = QColor(value.toString());
-	if (!result.isValid()) {
-		throw std::runtime_error("Invalid color, use #rrggbb or #aarrggbb.");
-	}
-	return result;
-}
-
 class Canvas final : public Ui::RpWidget {
 public:
 	void setHeight(int height) {
@@ -90,17 +86,8 @@ public:
 		resize(width(), _height);
 	}
 
-	void setCommands(QJsonArray commands) {
-		for (const auto &command : commands) {
-			const auto op = command.toObject().value(u"op"_q).toString();
-			if (op != u"rect"_q && op != u"line"_q
-				&& op != u"ellipse"_q && op != u"text"_q) {
-				throw std::runtime_error("Unknown canvas command.");
-			}
-			[[maybe_unused]] const auto color = ParseColor(
-				command.toObject().value(u"color"_q));
-		}
-		_commands = std::move(commands);
+	void setCommands(const QJsonArray &commands) {
+		_ops = ParsePaintOps(commands, kMaximumCanvasOps);
 		update();
 	}
 
@@ -112,40 +99,7 @@ protected:
 	void paintEvent(QPaintEvent *e) override {
 		auto p = QPainter(this);
 		p.setRenderHint(QPainter::Antialiasing);
-		for (const auto &value : _commands) {
-			const auto command = value.toObject();
-			const auto op = command.value(u"op"_q).toString();
-			const auto color = ParseColor(command.value(u"color"_q));
-			const auto number = [&](const char *key) {
-				return command.value(QLatin1String(key)).toDouble();
-			};
-			const auto rect = QRectF(
-				number("x"),
-				number("y"),
-				number("width"),
-				number("height"));
-			if (op == u"rect"_q) {
-				p.setPen(Qt::NoPen);
-				p.setBrush(color);
-				const auto radius = number("radius");
-				p.drawRoundedRect(rect, radius, radius);
-			} else if (op == u"ellipse"_q) {
-				p.setPen(Qt::NoPen);
-				p.setBrush(color);
-				p.drawEllipse(rect);
-			} else if (op == u"line"_q) {
-				p.setPen(QPen(color, std::max(number("width"), 1.)));
-				p.drawLine(QPointF(number("x1"), number("y1")),
-					QPointF(number("x2"), number("y2")));
-			} else if (op == u"text"_q) {
-				auto font = p.font();
-				font.setPixelSize(std::clamp(int(number("size")), 6, 96));
-				p.setFont(font);
-				p.setPen(color);
-				p.drawText(QPointF(number("x"), number("y")),
-					command.value(u"text"_q).toString());
-			}
-		}
+		PaintOps(p, _ops, rect());
 	}
 
 	void mousePressEvent(QMouseEvent *e) override {
@@ -157,7 +111,7 @@ protected:
 private:
 	int _height = 0;
 	const Fn<void(int, int)> _clicked;
-	QJsonArray _commands;
+	std::vector<PaintOp> _ops;
 
 };
 
@@ -401,14 +355,22 @@ PluginUi::~PluginUi() {
 		Elements::SetEventSender(nullptr);
 		Widgets::SetEventSender(nullptr);
 	}
-	for (const auto &[id, object] : _objects) {
-		if (object->bar) {
-			QObject::disconnect(object->bar.get(), nullptr, this, nullptr);
-		}
-	}
-	for (const auto &[id, object] : _objects) {
+	// Surfaces report their destruction to destroyed(), which erases from
+	// _objects. Disconnect them first, so destroying _objects can't reenter.
+	auto objects = base::take(_objects);
+	for (const auto &[id, object] : objects) {
 		object->silent = true;
+		for (const auto widget : std::initializer_list<QObject*>{
+				object->bar.get(),
+				object->overlay.get(),
+				object->box.data() }) {
+			if (widget) {
+				QObject::disconnect(widget, nullptr, this, nullptr);
+			}
+		}
 		if (object->box) {
+			// The box outlives us during its closing animation; its widgets
+			// check the guard in build() before sending events.
 			object->box->closeBox();
 		}
 	}
@@ -590,6 +552,18 @@ int PluginUi::layoutChatBars(
 			return !chat;
 		});
 		_chats.emplace_back(container);
+		// A bar lives until the plugin closes it: take it out of a chat
+		// that is destroyed. QWidget emits destroyed() before it deletes
+		// its children.
+		connect(container, &QObject::destroyed, this, [=] {
+			for (const auto &[id, object] : _objects) {
+				const auto bar = object->bar.get();
+				if (bar && bar->parentWidget() == container) {
+					bar->hide();
+					bar->setParent(nullptr);
+				}
+			}
+		});
 	}
 	const auto accountId = peer
 		? QString::number(peer->session().uniqueId())
@@ -604,12 +578,14 @@ int PluginUi::layoutChatBars(
 			&& object->accountId == accountId
 			&& object->chatId == chatId) {
 			if (bar->parentWidget() != container) {
+				// On top of the history, but under the panels and menus
+				// the chat raises later.
 				bar->setParent(container);
+				bar->raise();
 			}
 			bar->resizeToWidth(width);
 			bar->moveToLeft(left, top + height, container->width());
 			bar->show();
-			bar->raise();
 			height += bar->height();
 		} else if (bar->parentWidget() == container) {
 			bar->hide();
@@ -654,8 +630,15 @@ object_ptr<Ui::RpWidget> PluginUi::build(
 	const auto id = node.value(u"id"_q).toString();
 	const auto text = node.value(u"text"_q).toString();
 	const auto objectId = object.objectId;
+	// A dialog belongs to the window, not to us, and can outlive us.
+	const auto guard = QPointer<PluginUi>(this);
 	const auto sender = [=](const QString &kind, QJsonValue value) {
-		if (const auto i = _objects.find(objectId); i != end(_objects)) {
+		if (!guard || _updating) {
+			// Changes made by ui.update aren't reported back, so a plugin
+			// reacting to them can't loop on its own updates.
+			return;
+		} else if (const auto i = _objects.find(objectId);
+				i != end(_objects) && !i->second->silent) {
 			send(*i->second, id, kind, value);
 		}
 	};
@@ -778,6 +761,8 @@ void PluginUi::update(const QJsonObject &command) {
 	}
 	const auto widget = node->second.data();
 	const auto props = command.value(u"props"_q).toObject();
+	const auto was = std::exchange(_updating, true);
+	const auto restore = gsl::finally([&] { _updating = was; });
 	if (props.contains(u"text"_q)) {
 		const auto text = props.value(u"text"_q).toString();
 		if (const auto label = dynamic_cast<Ui::FlatLabel*>(widget)) {
@@ -801,10 +786,11 @@ void PluginUi::update(const QJsonObject &command) {
 			canvas->setCommands(props.value(u"commands"_q).toArray());
 		}
 	}
-	if (const auto parent = widget->parentWidget()) {
-		if (const auto rp = dynamic_cast<Ui::RpWidget*>(parent)) {
-			rp->resizeToWidth(rp->width());
-		}
+	// An overlay's parent is the Telegram widget it covers: not ours to lay
+	// out, and its size doesn't depend on the overlay.
+	const auto parent = object.overlay ? nullptr : widget->parentWidget();
+	if (const auto rp = dynamic_cast<Ui::RpWidget*>(parent)) {
+		rp->resizeToWidth(rp->width());
 	}
 	if (object.bar) {
 		relayoutChats();

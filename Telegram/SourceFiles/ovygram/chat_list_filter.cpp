@@ -12,6 +12,7 @@
 #include <QtCore/QJsonArray>
 
 #include <map>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <vector>
@@ -96,12 +97,23 @@ void Handle(const QJsonObject &command) {
 			throw std::runtime_error("A chat list rule needs account_id and chats.");
 		}
 		auto refresh = rule.chatIds;
+		auto previous = std::optional<Rule>();
 		if (const auto old = rules.find(ruleId); old != end(rules)) {
-			refresh.insert(begin(old->second.chatIds), end(old->second.chatIds));
+			if (old->second.accountId == rule.accountId) {
+				refresh.insert(
+					begin(old->second.chatIds),
+					end(old->second.chatIds));
+			} else {
+				previous = std::move(old->second);
+			}
 		}
 		const auto accountId = rule.accountId;
 		rules[ruleId] = std::move(rule);
 		Refresh(accountId, refresh);
+		if (previous) {
+			// The rule moved to another account: show the old one's chats.
+			Refresh(previous->accountId, previous->chatIds);
+		}
 	} else if (method == u"ui.chat_list.unhide"_q) {
 		const auto i = rules.find(ruleId);
 		if (i != end(rules)) {

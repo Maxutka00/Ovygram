@@ -466,7 +466,14 @@ not_null<Row*> Entry::addToChatList(
 void Entry::removeFromChatList(
 		FilterId filterId,
 		not_null<MainList*> list) {
-	if (isPinnedDialog(filterId)) {
+#ifdef OVYGRAM_ENABLED
+	// A chat hidden by a plugin keeps its pin: it is still pinned on the
+	// server, and a saved pinned order must keep listing it.
+	const auto keepPinned = Ovygram::HiddenFromChatList(this);
+#else // OVYGRAM_ENABLED
+	const auto keepPinned = false;
+#endif // OVYGRAM_ENABLED
+	if (isPinnedDialog(filterId) && !keepPinned) {
 		list->pinned()->setPinned(this, false);
 		owner().notifyPinnedDialogsOrderUpdated();
 	}

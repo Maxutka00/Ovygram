@@ -101,7 +101,8 @@ def prepare_linux(root, runtime, downloads):
             "./configure", f"--prefix={install}", "--enable-shared",
             "--without-ensurepip", "--disable-test-modules",
             # "$$" survives make; everything is relocated into one directory.
-            r"LDFLAGS=-Wl,-rpath,\$$ORIGIN",
+            # The argument replaces the caller's LDFLAGS, so they're kept here.
+            "LDFLAGS=" + (os.environ.get("LDFLAGS", "") + r" -Wl,-rpath,\$$ORIGIN").strip(),
         ], cwd=source, check=True)
         subprocess.run(["make", f"-j{os.cpu_count()}"], cwd=source, check=True)
         subprocess.run(["make", "install"], cwd=source, check=True)

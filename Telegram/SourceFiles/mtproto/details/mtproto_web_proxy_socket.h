@@ -51,7 +51,6 @@ private:
 	void transportFailed();
 
 	const uint32 _streamId;
-	WebProxy::Transport *_transport = nullptr;
 	QByteArray _incoming;
 	int _incomingOffset = 0;
 	State _state = State::NotConnected;

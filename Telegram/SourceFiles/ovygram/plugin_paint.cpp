@@ -7,8 +7,6 @@
 namespace Ovygram {
 namespace {
 
-constexpr auto kMaximumOps = 64;
-
 double Resolve(double value, int size) {
 	return (value < 0) ? (size + value) : value;
 }
@@ -23,9 +21,9 @@ QColor ParsePaintColor(const QJsonValue &value) {
 	return result;
 }
 
-std::vector<PaintOp> ParsePaintOps(const QJsonArray &commands) {
-	if (commands.size() > kMaximumOps) {
-		throw std::runtime_error("Too many draw commands in a decoration.");
+std::vector<PaintOp> ParsePaintOps(const QJsonArray &commands, int limit) {
+	if (commands.size() > limit) {
+		throw std::runtime_error("Too many draw commands.");
 	}
 	auto result = std::vector<PaintOp>();
 	for (const auto &value : commands) {

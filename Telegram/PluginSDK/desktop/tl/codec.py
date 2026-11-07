@@ -133,11 +133,21 @@ def _encode(value, kind, depth):
         return (value % 2 ** bits).to_bytes(bits // 8, "little")
     if kind in ("int128", "int256"):
         size = int(kind[3:]) // 8
-        result = value.to_bytes(size, "little") if isinstance(value, int) else bytes(value)
+        if type(value) is int:
+            # Signed or unsigned, as int and long are.
+            if not -(2 ** (size * 8 - 1)) <= value < 2 ** (size * 8):
+                raise ValueError(f"{kind} overflow.")
+            result = (value % 2 ** (size * 8)).to_bytes(size, "little")
+        elif isinstance(value, (bytes, bytearray, memoryview)):
+            result = bytes(value)
+        else:
+            raise TypeError(f"{kind} requires int or bytes.")
         if len(result) != size:
             raise ValueError(f"Invalid {kind} length.")
         return result
     if kind == "double":
+        if type(value) not in (int, float):
+            raise TypeError("double requires float.")
         return struct.pack("<d", value)
     if kind in ("string", "bytes"):
         if (kind == "string" and not isinstance(value, str)
@@ -161,7 +171,7 @@ def _encode(value, kind, depth):
 
 def _encode_object(value, depth):
     fields = value._tl["fields"]
-    flags = {name: getattr(value, python_name(name)) for name, kind in fields if kind == "#"}
+    flags = {name: getattr(value, python_name(name)) or 0 for name, kind in fields if kind == "#"}
     groups = {}
     for name, kind in fields:
         if "?" not in kind:

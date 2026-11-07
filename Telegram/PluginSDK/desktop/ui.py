@@ -134,7 +134,9 @@ class Spacer(Node):
 
 
 class Canvas(Node):
-    """Custom drawing: a list of draw commands, see the draw helpers below."""
+    """Custom drawing: a list of draw commands, see the draw helpers below.
+
+    Negative x or y count from the right or bottom edge, as in decorations."""
 
     type = "canvas"
 
@@ -459,7 +461,9 @@ class ChatDecoration:
     Coordinates are relative to the row; negative x or y count from its
     right or bottom edge, e.g. fill_rect(-28, 8, 20, 20, ...) is a square
     near the right edge. background tints the whole row, except when the
-    chat is open. Undone by remove() or when the plugin is unloaded."""
+    chat is open. Everything is painted over the row, so use a translucent
+    #aarrggbb background: an opaque one hides the row's text. Undone by
+    remove() or when the plugin is unloaded."""
 
     def __init__(self, owner, account_id, chat_id, commands, background):
         self.owner = owner
@@ -549,7 +553,10 @@ class MessageDecoration:
 
 
 def decorate_message(message, commands=(), background=None):
-    """Decorates a Message from desktop.client or an event."""
+    """Decorates a Message from desktop.client or an event.
+
+    Painted over the bubble, so use a translucent #aarrggbb background: an
+    opaque one hides the message text."""
     if not all(hasattr(message, key) for key in ("account_id", "chat_id", "id")):
         raise TypeError("decorate_message принимает Message из desktop.client.")
     return MessageDecoration(context(), message, commands, background)

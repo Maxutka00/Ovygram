@@ -32,5 +32,7 @@ try {
     python -m unittest discover -s "$Source/tools/ovygram/tests" -p test_plugin_runtime.py -v
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
+    # The smoke host is a debug build: keep it out of the staged bundle.
+    Remove-Item -LiteralPath 'python/ovygram_host.dll' -ErrorAction SilentlyContinue
     Pop-Location
 }

@@ -546,6 +546,22 @@ void ApiWrap::sendMessageFail(
 		not_null<PeerData*> peer,
 		uint64 randomId,
 		FullMsgId itemId) {
+#ifdef OVYGRAM_ENABLED
+	if (Api::IsPluginRpcCancelled(error)) {
+		// A plugin cancelled the send and already told why: drop the local
+		// message instead of marking it failed.
+		auto &data = _session->data();
+		if (randomId) {
+			data.unregisterMessageRandomId(randomId);
+			data.unregisterMessageSentData(randomId);
+		}
+		if (const auto item = data.message(itemId);
+			item && item->isLocal() && item->isSending()) {
+			data.histories().deleteMessages({ itemId }, false);
+		}
+		return;
+	}
+#endif
 	sendMessageFail(error.type(), peer, randomId, itemId);
 }
 

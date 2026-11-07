@@ -1864,6 +1864,9 @@ void Transport::Shutdown() {
 	if (!global.transport) {
 		return;
 	}
+	// Sockets resolve the transport through Instance(): hide it before
+	// the thread finishes and deletes it.
+	global.available = nullptr;
 	Deactivate();
 	const auto transport = global.transport.data();
 	QMetaObject::invokeMethod(transport, [=] {
@@ -1871,7 +1874,6 @@ void Transport::Shutdown() {
 	}, Qt::BlockingQueuedConnection);
 	global.thread->quit();
 	global.thread->wait();
-	global.available = nullptr;
 	global.webview = nullptr;
 	global.closingWebviews.clear();
 	global.transport = nullptr;
@@ -1945,10 +1947,10 @@ void Transport::registerStream(uint32 streamId, StreamHandlers handlers) {
 void Transport::closeStream(uint32 streamId) {
 	if (QThread::currentThread() == thread()) {
 		_private->closeStream(streamId);
-	} else if (thread()->isRunning()) {
-		QMetaObject::invokeMethod(this, [=] {
-			_private->closeStream(streamId);
-		}, Qt::BlockingQueuedConnection);
+	} else {
+		// Not blocking: the thread can stop right after an isRunning()
+		// check, and a blocking call would then wait forever.
+		InvokeQueued(this, [=] { _private->closeStream(streamId); });
 	}
 }
 
@@ -1959,10 +1961,8 @@ void Transport::sendData(uint32 streamId, QByteArray data) {
 	if (!reservePending(data.size())) {
 		if (QThread::currentThread() == thread()) {
 			_private->failStream(streamId);
-		} else if (thread()->isRunning()) {
-			QMetaObject::invokeMethod(this, [=] {
-				_private->failStream(streamId);
-			}, Qt::BlockingQueuedConnection);
+		} else {
+			InvokeQueued(this, [=] { _private->failStream(streamId); });
 		}
 		return;
 	}

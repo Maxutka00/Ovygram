@@ -110,6 +110,12 @@ quint64 HandleOf(QWidget *widget) {
 		return existing.toULongLong();
 	}
 	auto &state = Get();
+	if (state.handles.size() >= 4096) {
+		// Handles of destroyed widgets are useless, forget them.
+		std::erase_if(state.handles, [](const auto &entry) {
+			return !entry.second;
+		});
+	}
 	const auto handle = ++state.nextHandle;
 	state.handles.emplace(handle, widget);
 	widget->setProperty(kHandleProperty, handle);
@@ -210,10 +216,21 @@ void HideMatching(QWidget *widget) {
 	}
 }
 
-// Shows what removed rules hid, unless another rule still hides it.
+// Shows what removed rules hid. A widget another rule still hides moves to
+// that rule, so it is shown when that rule is removed too.
 void Restore(std::vector<QPointer<QWidget>> hidden) {
 	for (const auto &widget : hidden) {
-		if (widget && widget->isHidden() && !HiddenByRule(widget.data())) {
+		if (!widget || !widget->isHidden()) {
+			continue;
+		} else if (const auto rule = HidingRule(widget.data())) {
+			const auto known = std::find(
+				begin(rule->hidden),
+				end(rule->hidden),
+				widget);
+			if (known == end(rule->hidden)) {
+				rule->hidden.push_back(widget);
+			}
+		} else {
 			widget->show();
 		}
 	}
@@ -461,16 +478,23 @@ void Handle(const QJsonObject &command) {
 		if (ruleId.isEmpty() || (action != u"hide"_q && action != u"click"_q)) {
 			throw std::runtime_error("Invalid widget rule.");
 		}
-		state.rules[ruleId] = Rule{
+		auto rule = Rule{
 			.pluginId = pluginId,
 			.selector = ParseSelector(command.value(u"selector"_q).toObject()),
 			.action = action,
 			.replace = command.value(u"replace"_q).toBool(),
 		};
+		// A replaced rule may have hidden widgets the new one doesn't.
+		auto previous = std::vector<QPointer<QWidget>>();
+		if (const auto i = state.rules.find(ruleId); i != end(state.rules)) {
+			previous = std::move(i->second.hidden);
+		}
+		state.rules[ruleId] = std::move(rule);
 		EnsureFilter();
 		if (action == u"hide"_q) {
 			ApplyToAll();
 		}
+		Restore(std::move(previous));
 	} else if (method == u"ui.widgets.unrule"_q) {
 		auto hidden = std::vector<QPointer<QWidget>>();
 		if (const auto i = state.rules.find(ruleId); i != end(state.rules)) {

@@ -26,7 +26,12 @@ struct PaintOp {
 };
 
 [[nodiscard]] QColor ParsePaintColor(const QJsonValue &value);
-[[nodiscard]] std::vector<PaintOp> ParsePaintOps(const QJsonArray &commands);
+// Decorations repaint with Telegram rows, so they get fewer commands than
+// a plugin's own canvas.
+inline constexpr auto kMaximumDecorationOps = 64;
+[[nodiscard]] std::vector<PaintOp> ParsePaintOps(
+	const QJsonArray &commands,
+	int limit = kMaximumDecorationOps);
 void PaintOps(QPainter &p, const std::vector<PaintOp> &ops, QRect area);
 
 } // namespace Ovygram

@@ -416,7 +416,7 @@ class DesktopUiTests(unittest.TestCase):
         self.assertEqual((replace["start"], replace["end"], replace["text"], replace["select"]), (4, 4, "4", True))
         space = [item for item in sent if item["method"] == "ui.keys.add"][0]
         self.assertEqual((space["sequence"], space["element"], space["replace"]), ("Space", "compose.field", True))
-        self.change(plugin_id, rule_id, "1+3=4", 4, (4, 5))  # Our own edit: ignored.
+        # The client doesn't report the plugin's own edits back.
         self.assertEqual(instance.suggestion, (4, 5))
         self.event(plugin_id=plugin_id, type="key", rule_id=space["rule_id"])
         self.answer_state("1+3=4", 5, (4, 5))
@@ -424,7 +424,6 @@ class DesktopUiTests(unittest.TestCase):
         self.assertEqual((accept["start"], accept["end"], accept["text"]), (5, 5, " "))
         self.assertEqual(instance.accepted, (4, 6))
         backspace = [item for item in self.commands_list() if item["method"] == "ui.keys.add"]
-        self.change(plugin_id, rule_id, "1+3=4 ", 6)  # Our own edit: ignored.
         self.assertIsNotNone(instance.backspace_rule)
         self.event(plugin_id=plugin_id, type="key", rule_id=instance.backspace_rule.id)
         self.answer_state("1+3=4 ", 6)

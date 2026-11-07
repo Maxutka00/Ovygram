@@ -1,6 +1,24 @@
+import re
 from dataclasses import dataclass, replace
 
 from . import tl
+
+# Characters not allowed in a file name on Windows, plus control characters.
+_UNSAFE_NAME = re.compile(r'[\x00-\x1f<>:"/\\|?*]')
+_MAX_NAME = 200
+
+
+def safe_file_name(name, fallback):
+    """Makes a file name sent by someone else safe to join with a directory.
+
+    Keeps only the last path component, drops characters Windows forbids and
+    falls back when nothing usable is left (".", "..", empty).
+    """
+    name = str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    name = _UNSAFE_NAME.sub("_", name).strip(" .")
+    if not name:
+        return str(fallback)
+    return name[-_MAX_NAME:]
 
 
 @dataclass(frozen=True)
@@ -87,8 +105,9 @@ def attachment(account_id, media):
         return None
     document = getattr(media, "document", None)
     if document is not None and document.constructor_name == "document":
-        name = next((item.file_name for item in document.attributes
-                     if item.constructor_name == "documentAttributeFilename"), str(document.id))
+        name = safe_file_name(next((item.file_name for item in document.attributes
+                                    if item.constructor_name == "documentAttributeFilename"), ""),
+                              document.id)
         return Attachment(account_id, tl.inputDocumentFileLocation(
             id=document.id, access_hash=document.access_hash,
             file_reference=document.file_reference, thumb_size=""), document.dc_id,
@@ -129,7 +148,8 @@ def message_from_native(value):
     if media is not None:
         file = Attachment(value["account_id"],
             tl.decode(base64.b64decode(media["location"]), "InputFileLocation"),
-            media["dc_id"], int(media["size"]), media["name"], media["mime_type"],
+            media["dc_id"], int(media["size"]),
+            safe_file_name(media["name"], media.get("id") or value["id"]), media["mime_type"],
             message_chat_id=int(value["chat_id"]), message_id=int(value["id"]))
     return Message(value["account_id"], int(value["id"]), int(value["chat_id"]),
                    value["text"], value["date"], value["outgoing"], file)

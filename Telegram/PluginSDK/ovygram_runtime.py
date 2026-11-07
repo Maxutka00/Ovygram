@@ -32,6 +32,8 @@ METADATA = {
     "__platform__": "platform", "__desktop_sdk__": "sdk",
     "__requirements__": "requirements",
 }
+# Shown in the plugin list, so kept short enough to lay out.
+METADATA_LIMITS = {"description": 2000}
 
 
 def read_metadata(source, filename):
@@ -54,6 +56,8 @@ def read_metadata(source, filename):
     for key in ("id", "name", "version", "author", "description"):
         if not isinstance(values.get(key), str) or not values[key].strip():
             raise ValueError(f"Укажите строковое поле {key} в метаданных.")
+        if len(values[key]) > METADATA_LIMITS.get(key, 128):
+            raise ValueError(f"Поле {key} длиннее {METADATA_LIMITS.get(key, 128)} символов.")
     if not PLUGIN_ID.fullmatch(values["id"]):
         raise ValueError("Недопустимый ID плагина.")
     if values.get("platform") != "desktop":
@@ -551,6 +555,9 @@ class Manager:
             except RuntimeError:
                 pass
         self.runtime.stop()
-        if not (self.recovery or self.disabled or self.restart_required):
+        # The marker detects crashes: a clean exit removes it, also after a
+        # failed unload. Recovery mode and --disable-plugins keep it, so the
+        # next start still asks before loading plugins.
+        if not (self.recovery or self.disabled):
             self.marker.unlink(missing_ok=True)
         self.log_handler.close()

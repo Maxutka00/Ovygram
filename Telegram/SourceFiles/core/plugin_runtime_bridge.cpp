@@ -138,7 +138,16 @@ PluginRuntime::PluginRuntime(
 	_private->hookMask = reinterpret_cast<decltype(&OvygramHookMask)>(
 		resolve("OvygramHookMask"));
 	auto result = Output();
-	_private->runtime = create(python.c_str(), profile.c_str(), disabled, CopyOutput, &result);
+	// Python keeps these in sys.path and data paths, which must not depend
+	// on the current directory.
+	const auto pythonPath = std::filesystem::absolute(python).lexically_normal();
+	const auto profilePath = std::filesystem::absolute(profile).lexically_normal();
+	_private->runtime = create(
+		pythonPath.c_str(),
+		profilePath.c_str(),
+		disabled,
+		CopyOutput,
+		&result);
 	if (!_private->runtime) {
 		throw std::runtime_error(result.copied ? result.text : "Python host initialization failed.");
 	}

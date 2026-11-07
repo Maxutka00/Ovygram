@@ -52,7 +52,7 @@ def _chat(chat):
     return chat
 
 
-async def rpc(account, request, *, dc_id=0, timeout=60, _feed=""):
+async def rpc(account, request, *, dc_id=0, timeout=60, _feed="", _message_ids=()):
     account_id = _account(account)
     if not isinstance(request, tl.TLObject) or not request._tl["function"]:
         raise TypeError("Ожидается TL-запрос из desktop.tl.")
@@ -67,7 +67,8 @@ async def rpc(account, request, *, dc_id=0, timeout=60, _feed=""):
         elif peer.constructor_name == "inputPeerUser":
             chat_id = str(peer.user_id)
     response = await _request("rpc", account_id, data=data, dc_id=dc_id,
-                              timeout=timeout, chat_id=chat_id, feed=_feed)
+                              timeout=timeout, chat_id=chat_id, feed=_feed,
+                              message_ids=list(_message_ids))
     return tl.decode(base64.b64decode(response["data"], validate=True), tl.response_type(request))
 
 
@@ -112,8 +113,11 @@ async def delete_messages(chat, message_ids, *, revoke=True):
     if chat.kind == "channel":
         peer = chat.input_peer
         return await rpc(chat.account_id, tl.channels.deleteMessages(
-            channel=tl.inputChannel(channel_id=peer.channel_id, access_hash=peer.access_hash), id=ids))
-    return await rpc(chat.account_id, tl.messages.deleteMessages(id=ids, revoke=revoke))
+            channel=tl.inputChannel(channel_id=peer.channel_id, access_hash=peer.access_hash), id=ids),
+            _feed="delete", _message_ids=ids)
+    # The client removes the messages from its history too.
+    return await rpc(chat.account_id, tl.messages.deleteMessages(id=ids, revoke=revoke),
+                     _feed="delete", _message_ids=ids)
 
 
 async def forward_messages(source, target, message_ids, *, silent=False):

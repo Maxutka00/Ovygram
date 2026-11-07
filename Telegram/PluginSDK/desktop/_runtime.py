@@ -10,6 +10,7 @@ import hashlib
 from dataclasses import dataclass
 import inspect
 import json
+import sys
 import threading
 import time
 import uuid
@@ -20,6 +21,10 @@ from . import tl
 
 _current = contextvars.ContextVar("desktop_plugin_context", default=None)
 _hook_stack = contextvars.ContextVar("desktop_hook_stack", default=())
+# Requests before_send hooks see, besides before_rpc.
+OUTGOING = frozenset({
+    "messages.sendMessage", "messages.sendMedia", "messages.sendMultiMedia",
+    "messages.forwardMessages", "messages.sendInlineBotResult"})
 POINT_BITS = {name: 1 << index for index, name in enumerate((
     "before_send", "before_rpc", "after_rpc", "before_updates", "new_message",
     "edited_message", "deleted_message", "account_changed", "accounts_changed", "chat_changed"))}
@@ -158,6 +163,7 @@ class Runtime:
     def hooks(self, point, value, validate, inherited=()):
         original = copy.deepcopy(value)
         current = copy.deepcopy(value)
+        modified = False
         stack = (*_hook_stack.get(), *inherited)
         for handler in self.handlers(point):
             owner = self.contexts.get(handler.plugin_id)
@@ -182,6 +188,7 @@ class Runtime:
                 if result.strategy in (MODIFY, MODIFY_FINAL):
                     validate(result.value, original)
                     current = copy.deepcopy(result.value)
+                    modified = True
                 elif result.value is not None:
                     raise HookError("DEFAULT не принимает изменённое значение.")
                 if result.strategy == MODIFY_FINAL:
@@ -194,8 +201,24 @@ class Runtime:
                 raise HookError(f"Ошибка хука {handler.plugin_id}: {error}") from error
             finally:
                 _hook_stack.reset(token)
-        validate(current, original)
+        if modified:
+            # Unchanged values aren't validated: for after_rpc that would
+            # decode every response, and fail on any the codec can't read.
+            validate(current, original)
         return current
+
+    def wanted(self, point, name):
+        """Whether a hook of the point handles a request of this TL name."""
+        return any(not handler.request or handler.request == name
+                   for handler in self.handlers(point))
+
+    @staticmethod
+    def function_name(data):
+        from .tl.codec import _by_id
+        declaration = _by_id.get(int.from_bytes(data[:4], "little")) if len(data) >= 4 else None
+        if declaration is None or not declaration._tl["function"]:
+            return None
+        return declaration._tl["name"]
 
     def ensure_loop(self):
         with self.lock:
@@ -308,13 +331,18 @@ class Runtime:
             pass
 
     def submit_ui(self, owner, method, **parameters):
-        if not owner.active:
-            raise RuntimeError("Плагин уже выгружен.")
-        self.submit({"id": uuid.uuid4().hex, "method": method,
-                     "plugin_id": owner.plugin_id, **parameters})
+        # Checked and sent under the lock that remove() holds while sending
+        # "ui.close_plugin", so no command of an unloaded plugin follows it.
+        with self.lock:
+            if not owner.active:
+                raise RuntimeError("Плагин уже выгружен.")
+            self.submit({"id": uuid.uuid4().hex, "method": method,
+                         "plugin_id": owner.plugin_id, **parameters})
 
     def add_surface(self, surface):
         with self.lock:
+            if not surface.owner.active:
+                raise RuntimeError("Плагин уже выгружен.")
             if surface.id in self.surfaces:
                 raise RuntimeError("Окно уже показано.")
             self.surfaces[surface.id] = surface
@@ -504,16 +532,18 @@ class Runtime:
             surfaces = [key for key, item in self.surfaces.items() if item.owner.plugin_id == plugin_id]
             for key in surfaces:
                 self.surfaces.pop(key).closed = True
+            if plugin_id in self.contexts:
+                self.contexts[plugin_id].active = False
+            try:
+                # Also closes UI the plugin queued before its surfaces were registered.
+                self.submit({"method": "ui.close_plugin", "id": uuid.uuid4().hex, "plugin_id": plugin_id})
+            except RuntimeError:
+                pass
         for key in pending:
             try:
                 self.submit({"method": "cancel", "id": key, "plugin_id": plugin_id})
             except RuntimeError:
                 pass
-        try:
-            # Also closes UI the plugin queued before its surfaces were registered.
-            self.submit({"method": "ui.close_plugin", "id": uuid.uuid4().hex, "plugin_id": plugin_id})
-        except RuntimeError:
-            pass
         self.contexts.pop(plugin_id, None)
 
     def stop(self):
@@ -537,6 +567,10 @@ class Runtime:
         self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join(timeout=2)
 
+    @staticmethod
+    def log_hook_skip(point, error):
+        print(f"Ovygram: {point} skipped, can't decode TL: {error}", file=sys.stderr)
+
     def native_hook(self, request):
         point = request["point"]
         account = request["account_id"]
@@ -545,9 +579,9 @@ class Runtime:
         if not self.handlers(point) and (point != "before_rpc" or not self.handlers("before_send")):
             return {"data": request["data"], "error": request.get("error")}
         if point == "before_rpc":
-            from .tl.codec import _by_id
-            declaration = _by_id.get(int.from_bytes(data[:4], "little"))
-            if declaration is None or not declaration._tl["function"]:
+            name = self.function_name(data)
+            if name is None or not (self.wanted("before_rpc", name) or (
+                    name in OUTGOING and self.wanted("before_send", name))):
                 return {"data": request["data"]}
             value = RpcContext(account, request["request_id"], tl.decode(data))
 
@@ -566,9 +600,7 @@ class Runtime:
                             raise HookError("Хук альбома должен сохранить состав random_id.")
                 tl.encode(value.request)
 
-            outgoing = {"messages.sendMessage", "messages.sendMedia", "messages.sendMultiMedia",
-                        "messages.forwardMessages", "messages.sendInlineBotResult"}
-            if value.request.constructor_name in outgoing:
+            if value.request.constructor_name in OUTGOING:
                 message = OutgoingMessage(account, copy.deepcopy(value.request))
 
                 def validate_message(changed, original):
@@ -589,7 +621,13 @@ class Runtime:
                                         "text": base64.b64encode(tl.encode(text)).decode("ascii")})
             return {"data": base64.b64encode(changed).decode("ascii"), "local_texts": local_texts}
         if point == "before_updates":
-            value = UpdateContext(account, tl.decode(data, "Updates"))
+            try:
+                updates = tl.decode(data, "Updates")
+            except Exception as error:
+                # Never drop server updates because the SDK can't read them.
+                self.log_hook_skip(point, error)
+                return {"data": request["data"]}
+            value = UpdateContext(account, updates)
 
             def validate(changed, original):
                 if (not isinstance(changed, UpdateContext) or changed.account_id != account
@@ -601,8 +639,15 @@ class Runtime:
             value = self.hooks(point, value, validate, inherited)
             return {"data": base64.b64encode(tl.encode(value.updates)).decode("ascii")}
         if point == "after_rpc":
-            request_data = request.get("request_data")
-            original_request = tl.decode(base64.b64decode(request_data)) if request_data else None
+            request_data = base64.b64decode(request.get("request_data") or "")
+            name = self.function_name(request_data)
+            if not self.wanted(point, name):
+                return {"data": request["data"], "error": request.get("error")}
+            try:
+                original_request = tl.decode(request_data) if name else None
+            except Exception as error:
+                self.log_hook_skip(point, error)
+                original_request = None
             value = RpcResponse(account, request["request_id"], data or None,
                                 request.get("error"), original_request)
 

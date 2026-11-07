@@ -66,6 +66,7 @@ private:
 	std::map<QString, std::unique_ptr<Object>> _objects;
 	std::vector<QPointer<QWidget>> _chats;
 	bool _relayoutQueued = false;
+	bool _updating = false;
 
 };
 

@@ -5265,7 +5265,7 @@ void ComposeControls::updateControlsVisibility() {
 	updateExpandButtonVisibility();
 	updateDiscardRichDraftVisibility();
 #ifdef OVYGRAM_ENABLED
-	Ovygram::ApplyElementRules(_parent);
+	Ovygram::ApplyElementRules(_wrap.get()); // The elements are its children.
 #endif // OVYGRAM_ENABLED
 }
 

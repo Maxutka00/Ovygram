@@ -109,6 +109,12 @@ void Handle(const QJsonObject &command) {
 		if (!background.isNull() && !background.isUndefined()) {
 			decoration.background = ParsePaintColor(background);
 		}
+		if (const auto i = decorations.find(id); i != end(decorations)) {
+			// The ID may move to another message: clear the old one.
+			const auto previous = std::move(i->second);
+			decorations.erase(i);
+			Repaint(previous);
+		}
 		Repaint(decorations[id] = std::move(decoration));
 	} else if (method == u"ui.message_decoration.remove"_q) {
 		if (const auto i = decorations.find(id); i != end(decorations)) {
