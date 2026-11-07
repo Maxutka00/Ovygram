@@ -589,4 +589,20 @@ void RemovePlugin(const QString &pluginId) {
 	Restore(std::move(hidden));
 }
 
+QString HandleFor(QWidget *widget) {
+	return QString::number(HandleOf(widget));
+}
+
+QString ClassNameOf(const QWidget *widget) {
+	return ClassName(widget);
+}
+
+QJsonValue VariantToJson(const QVariant &value) {
+	return ToJson(value);
+}
+
+QVariant JsonToVariant(const QJsonValue &value, int typeId) {
+	return FromJson(value, typeId);
+}
+
 } // namespace Ovygram::Widgets

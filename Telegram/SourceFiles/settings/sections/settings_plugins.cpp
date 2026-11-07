@@ -32,6 +32,9 @@
 namespace Settings {
 namespace {
 
+// How often a page refreshes while plugin libraries are installed.
+constexpr auto kDependencyPoll = crl::time(1500);
+
 [[nodiscard]] QJsonValue Request(
 		QJsonObject request,
 		rpl::variable<QString> &notice) {
@@ -103,6 +106,30 @@ void AddNotice(
 		return !text.isEmpty();
 	}));
 	wrap->finishAnimating();
+}
+
+[[nodiscard]] QString DependencyLine(const QJsonObject &plugin) {
+	auto names = QStringList();
+	for (const auto &value : plugin.value(u"requirements"_q).toArray()) {
+		names.push_back(value.toString());
+	}
+	if (names.isEmpty()) {
+		return QString();
+	}
+	return (plugin.value(u"installing"_q).toBool()
+		? u"Устанавливаются зависимости: "_q
+		: u"Зависимости: "_q) + names.join(u", "_q);
+}
+
+[[nodiscard]] bool InstallingDependencies(const QJsonObject &snapshot) {
+	return !snapshot.value(u"dependencies"_q).toObject().value(
+		u"installing"_q).toString().isEmpty();
+}
+
+[[nodiscard]] QString DependencyStatus(const QJsonObject &snapshot) {
+	return snapshot.value(u"dependencies"_q).toObject().value(u"restart"_q).toBool()
+		? u"Новые версии библиотек плагинов применятся после перезапуска клиента."_q
+		: QString();
 }
 
 [[nodiscard]] QString PluginMetadata(const QJsonObject &plugin) {
@@ -263,12 +290,14 @@ private:
 	void operate(const QString &action);
 	void installUpdate();
 	void addSettings(const QJsonArray &fields);
+	void pollWhileInstalling(const QJsonObject &snapshot);
 
 	const QString _pluginId;
 	const QString _name;
 	const not_null<Ui::VerticalLayout*> _content;
 	rpl::variable<QString> _notice;
 	rpl::event_stream<> _back;
+	bool _polling = false;
 };
 
 struct DetailsFactory final : AbstractSectionFactory {
@@ -350,12 +379,19 @@ void PluginDetails::refresh() {
 	AddCardLabel(card, PluginMetadata(plugin), st::settingsPluginCardMeta);
 	AddCardLabel(card, plugin.value(u"description"_q).toString());
 	AddCardLabel(card, _pluginId, st::settingsPluginCardMeta);
+	if (const auto line = DependencyLine(plugin); !line.isEmpty()) {
+		AddCardLabel(card, line, st::settingsPluginCardMeta);
+	}
 	if (const auto error = plugin.value(u"error"_q).toString(); !error.isEmpty()) {
 		Ui::AddDividerText(_content, rpl::single(u"Ошибка: "_q + error));
 	}
 	if (!status.isEmpty()) {
 		Ui::AddDividerText(_content, rpl::single(status));
 	}
+	if (const auto text = DependencyStatus(snapshot); !text.isEmpty()) {
+		Ui::AddDividerText(_content, rpl::single(text));
+	}
+	pollWhileInstalling(snapshot);
 
 	if (plugin.value(u"loaded"_q).toBool()) {
 		const auto fields = Request({
@@ -384,6 +420,16 @@ void PluginDetails::refresh() {
 			}));
 		});
 	Ui::AddSkip(_content);
+}
+
+void PluginDetails::pollWhileInstalling(const QJsonObject &snapshot) {
+	if (InstallingDependencies(snapshot) && !_polling) {
+		_polling = true;
+		QTimer::singleShot(kDependencyPoll, this, [this] {
+			_polling = false;
+			refresh();
+		});
+	}
 }
 
 void PluginDetails::operate(const QString &action) {
@@ -502,6 +548,7 @@ private:
 	QJsonObject _snapshot;
 	QString _query;
 	rpl::variable<QString> _notice;
+	bool _polling = false;
 };
 
 Plugins::Plugins(
@@ -537,6 +584,14 @@ void Plugins::showFinished() {
 void Plugins::refresh() {
 	_snapshot = Request({ { u"action"_q, u"snapshot"_q } }, _notice).toObject();
 	populate();
+	// The plugin starts when its libraries are installed in the background.
+	if (InstallingDependencies(_snapshot) && !_polling) {
+		_polling = true;
+		QTimer::singleShot(kDependencyPoll, this, [this] {
+			_polling = false;
+			refresh();
+		});
+	}
 }
 
 void Plugins::populate() {
@@ -547,6 +602,9 @@ void Plugins::populate() {
 	const auto status = RuntimeStatus(_snapshot);
 	if (!status.isEmpty()) {
 		Ui::AddDividerText(_content, rpl::single(status));
+	}
+	if (const auto text = DependencyStatus(_snapshot); !text.isEmpty()) {
+		Ui::AddDividerText(_content, rpl::single(text));
 	}
 	if (_snapshot.value(u"recovery"_q).toBool()
 		&& !_snapshot.value(u"disabled"_q).toBool()
@@ -583,6 +641,9 @@ void Plugins::populate() {
 			[=, this] { operate(id, enabled ? u"disable"_q : u"enable"_q); });
 		AddCardLabel(card, PluginMetadata(plugin), st::settingsPluginCardMeta);
 		AddCardLabel(card, DescriptionPreview(plugin.value(u"description"_q).toString()));
+		if (const auto line = DependencyLine(plugin); !line.isEmpty()) {
+			AddCardLabel(card, line, st::settingsPluginCardMeta);
+		}
 		if (const auto error = plugin.value(u"error"_q).toString(); !error.isEmpty()) {
 			AddCardLabel(card, u"Ошибка: "_q + DescriptionPreview(error), st::settingsPluginCardMeta);
 		}

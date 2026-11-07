@@ -5,6 +5,7 @@
 
 #include <functional>
 
+class QVariant;
 class QWidget;
 
 namespace Ovygram::Widgets {
@@ -24,5 +25,12 @@ void RemovePlugin(const QString &pluginId);
 
 // The widget behind a handle from widgets.tree, or nullptr if it is gone.
 [[nodiscard]] QWidget *Resolve(const QJsonValue &handle);
+
+// Shared with desktop.native.
+[[nodiscard]] QString HandleFor(QWidget *widget);
+[[nodiscard]] QString ClassNameOf(const QWidget *widget);
+[[nodiscard]] QJsonValue VariantToJson(const QVariant &value);
+// Throws std::runtime_error when the value can't become that type.
+[[nodiscard]] QVariant JsonToVariant(const QJsonValue &value, int typeId);
 
 } // namespace Ovygram::Widgets

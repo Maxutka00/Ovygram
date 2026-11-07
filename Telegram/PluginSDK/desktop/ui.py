@@ -416,6 +416,8 @@ class WidgetRule:
             runtime.submit_ui(self.owner, "ui.compose.watch", rule_id=self.id, enabled=False)
         elif self.method == "ui.menu.add":
             runtime.submit_ui(self.owner, "ui.menu.remove", rule_id=self.id)
+        elif self.method.startswith("ui.native."):
+            runtime.submit_ui(self.owner, "ui.native.disconnect", rule_id=self.id)
         else:
             runtime.submit_ui(self.owner, "ui.widgets.unrule", rule_id=self.id)
 

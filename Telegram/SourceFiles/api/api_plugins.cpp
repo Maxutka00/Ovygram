@@ -21,6 +21,7 @@
 #include "mtproto/facade.h"
 #include "ovygram/plugin_elements.h"
 #include "ovygram/plugin_menus.h"
+#include "ovygram/plugin_native.h"
 #include "ovygram/plugin_ui.h"
 #include "ovygram/plugin_widgets.h"
 #include "ui/image/image_location.h"
@@ -353,6 +354,9 @@ void PluginClient::receive(const QByteArray &request) {
 			return;
 		} else if (method.startsWith(u"widgets."_q)) {
 			reply(id, Ovygram::Widgets::Request(command));
+			return;
+		} else if (method.startsWith(u"native."_q)) {
+			reply(id, Ovygram::Native::Request(command));
 			return;
 		} else if (method == u"python_ui"_q) {
 			reply(id, dispatch({

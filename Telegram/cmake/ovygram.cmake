@@ -31,6 +31,8 @@ target_sources(Telegram PRIVATE
     SourceFiles/ovygram/plugin_elements.h
     SourceFiles/ovygram/plugin_menus.cpp
     SourceFiles/ovygram/plugin_menus.h
+    SourceFiles/ovygram/plugin_native.cpp
+    SourceFiles/ovygram/plugin_native.h
     SourceFiles/ovygram/plugin_paint.cpp
     SourceFiles/ovygram/plugin_paint.h
     SourceFiles/ovygram/plugin_section.cpp
