@@ -20,6 +20,7 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace Ovygram {
@@ -44,6 +45,7 @@ protected:
 
 struct State {
 	std::map<QString, QString> composeWatchers; // Rule ID -> plugin ID.
+	bool editing = false; // Applying a plugin's compose command.
 	std::vector<Element> elements;
 	std::map<QString, Rules> rules;
 	std::function<void(QJsonObject)> send;
@@ -192,15 +194,43 @@ bool Filter::eventFilter(QObject *watched, QEvent *e) {
 	return fallback;
 }
 
-// Positions are QTextDocument positions, and text is the document text, so
-// the positions index it (custom emoji are U+FFFC there).
+// QTextDocument positions count UTF-16 code units, Python indexes str by
+// code points: an emoji outside the BMP is 2 units and 1 code point.
+[[nodiscard]] int UnitsToCodePoints(const QString &text, int units) {
+	units = std::clamp(units, 0, int(text.size()));
+	auto result = 0;
+	for (auto i = 0; i < units; ++i, ++result) {
+		if (text[i].isHighSurrogate()
+			&& i + 1 < text.size()
+			&& text[i + 1].isLowSurrogate()) {
+			++i;
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] int CodePointsToUnits(const QString &text, int points) {
+	auto i = 0;
+	for (; i < text.size() && points > 0; ++i, --points) {
+		if (text[i].isHighSurrogate()
+			&& i + 1 < text.size()
+			&& text[i + 1].isLowSurrogate()) {
+			++i;
+		}
+	}
+	return i;
+}
+
+// Text is the document text (custom emoji are U+FFFC there), positions are
+// code point indexes into it, as Python str indexes.
 [[nodiscard]] QJsonObject FieldState(not_null<Ui::InputField*> field) {
 	const auto cursor = field->textCursor();
+	const auto text = field->rawTextEdit()->toPlainText();
 	return {
-		{ u"text"_q, field->rawTextEdit()->toPlainText() },
-		{ u"cursor"_q, cursor.position() },
-		{ u"selection_start"_q, cursor.selectionStart() },
-		{ u"selection_end"_q, cursor.selectionEnd() },
+		{ u"text"_q, text },
+		{ u"cursor"_q, UnitsToCodePoints(text, cursor.position()) },
+		{ u"selection_start"_q, UnitsToCodePoints(text, cursor.selectionStart()) },
+		{ u"selection_end"_q, UnitsToCodePoints(text, cursor.selectionEnd()) },
 	};
 }
 
@@ -210,6 +240,7 @@ void WatchField(not_null<Ui::InputField*> field) {
 		// Only edits by the user: the focus is on the inner QTextEdit.
 		if (state.composeWatchers.empty()
 			|| !state.send
+			|| state.editing
 			|| !field->rawTextEdit()->hasFocus()) {
 			return;
 		}
@@ -237,15 +268,17 @@ void WatchField(not_null<Ui::InputField*> field) {
 
 void SetColors(const QString &pluginId, const QJsonObject &colors) {
 	auto &state = Get();
-	if (!state.palette) {
-		state.palette = style::main_palette::save();
-	}
+	auto parsed = std::vector<std::pair<QByteArray, QColor>>();
 	for (auto i = colors.begin(); i != colors.end(); ++i) {
 		const auto color = QColor(i.value().toString());
 		if (!color.isValid()) {
 			throw std::runtime_error("Invalid color, use #rrggbb or #aarrggbb.");
 		}
-		const auto name = i.key().toLatin1();
+		parsed.emplace_back(i.key().toLatin1(), color);
+	}
+	// All or nothing: an unknown name undoes the colors set before it.
+	const auto before = style::main_palette::save();
+	for (const auto &[name, color] : parsed) {
 		const auto result = style::main_palette::setColor(
 			QLatin1String(name.constData(), name.size()),
 			uchar(color.red()),
@@ -253,9 +286,13 @@ void SetColors(const QString &pluginId, const QJsonObject &colors) {
 			uchar(color.blue()),
 			uchar(color.alpha()));
 		if (result == style::palette::SetResult::KeyNotFound) {
+			style::main_palette::load(before);
 			throw std::runtime_error(
-				"Unknown palette color: " + i.key().toStdString());
+				"Unknown palette color: " + name.toStdString());
 		}
+	}
+	if (!state.palette) {
+		state.palette = before;
 	}
 	state.paletteOwners.insert(pluginId);
 	style::NotifyPaletteChanged();
@@ -311,6 +348,11 @@ void Handle(const QJsonObject &command) {
 	const auto method = command.value(u"method"_q).toString();
 	const auto pluginId = command.value(u"plugin_id"_q).toString();
 	const auto name = command.value(u"element"_q).toString();
+	// Edits made by plugin commands aren't reported back as user edits, so a
+	// plugin reacting to changes can't loop on its own edits.
+	auto &editing = Get().editing;
+	const auto wasEditing = std::exchange(editing, true);
+	const auto restore = gsl::finally([&] { editing = wasEditing; });
 	if (method == u"ui.element.hide"_q) {
 		auto &hiding = Get().rules[name].hiding;
 		if (command.value(u"hidden"_q).toBool()) {
@@ -340,9 +382,14 @@ void Handle(const QJsonObject &command) {
 		const auto field = ComposeField();
 		const auto edit = field->rawTextEdit();
 		auto cursor = edit->textCursor();
-		const auto length = edit->document()->characterCount() - 1;
-		const auto from = std::clamp(command.value(u"start"_q).toInt(), 0, length);
-		const auto till = std::clamp(command.value(u"end"_q).toInt(), from, length);
+		// Python sends code point indexes, see FieldState().
+		const auto current = edit->toPlainText();
+		const auto from = CodePointsToUnits(
+			current,
+			command.value(u"start"_q).toInt());
+		const auto till = std::max(
+			CodePointsToUnits(current, command.value(u"end"_q).toInt()),
+			from);
 		const auto text = command.value(u"text"_q).toString();
 		cursor.setPosition(from);
 		cursor.setPosition(till, QTextCursor::KeepAnchor);

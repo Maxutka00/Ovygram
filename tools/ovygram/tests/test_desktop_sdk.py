@@ -328,6 +328,51 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(HookError):
             self.hook(name="before_updates", data=tl.updatesTooLong())
 
+    def test_hooks_skip_requests_they_do_not_handle(self):
+        received = []
+        self.runtime.register(self.plugins["plugin.a"], "after_rpc", received.append,
+                              request="updates.getState")
+        garbage = base64.b64encode(b"\xff\xff\xff\xff").decode()
+        # Another request: nothing is decoded, even an unreadable response.
+        response = self.runtime.native_hook({"point": "after_rpc", "account_id": "42", "request_id": 99,
+            "data": garbage, "request_data": base64.b64encode(
+                tl.encode(tl.account.updateStatus(offline=False))).decode(), "error": None})
+        self.assertEqual(response["data"], garbage)
+        self.assertFalse(received)
+
+    def test_unchanged_response_is_not_decoded(self):
+        received = []
+        self.runtime.register(self.plugins["plugin.a"], "after_rpc", received.append)
+        garbage = base64.b64encode(b"\xff\xff\xff\xff").decode()
+        response = self.runtime.native_hook({"point": "after_rpc", "account_id": "42", "request_id": 99,
+            "data": garbage, "request_data": base64.b64encode(
+                tl.encode(tl.updates.getState())).decode(), "error": None})
+        self.assertEqual(response["data"], garbage)
+        self.assertEqual(len(received), 1)
+
+    def test_unreadable_updates_are_kept(self):
+        received = []
+        self.runtime.register(self.plugins["plugin.a"], "before_updates", received.append)
+        garbage = base64.b64encode(b"\xff\xff\xff\xff").decode()
+        response = self.runtime.native_hook({"point": "before_updates", "account_id": "42",
+                                             "data": garbage})
+        self.assertEqual(response["data"], garbage)
+        self.assertFalse(received)
+
+    def test_no_ui_command_after_unload(self):
+        owner = self.plugins["plugin.a"]
+        self.manager.disable("plugin.a")
+        with self.assertRaises(RuntimeError):
+            self.runtime.submit_ui(owner, "ui.clipboard", text="late")
+
+    def test_received_file_names_are_safe(self):
+        from desktop.models import safe_file_name
+        self.assertEqual(safe_file_name("../../plugins/evil.py", 1), "evil.py")
+        self.assertEqual(safe_file_name("a\\..\\b.txt", 1), "b.txt")
+        self.assertEqual(safe_file_name("..", 7), "7")
+        self.assertEqual(safe_file_name("", 7), "7")
+        self.assertEqual(safe_file_name('x:y?.txt', 7), "x_y_.txt")
+
     def test_account_settings_survive_update_and_rollback(self):
         owner = self.plugins["plugin.a"]
         owner.set("key", "first", "42")

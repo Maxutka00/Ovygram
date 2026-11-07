@@ -20,6 +20,8 @@
 #include "main/main_session.h"
 #include "mtproto/facade.h"
 #include "ovygram/plugin_elements.h"
+#include "ovygram/plugin_menus.h"
+#include "ovygram/plugin_native.h"
 #include "ovygram/plugin_ui.h"
 #include "ovygram/plugin_widgets.h"
 #include "ui/image/image_location.h"
@@ -40,6 +42,21 @@ namespace Api {
 namespace {
 
 constexpr auto kMaximumPayload = 64 * 1024 * 1024;
+
+// Whether messages returned by this request belong to the chat history.
+[[nodiscard]] bool LocalHistoryRequest(const QByteArray &data) {
+	if (data.size() < int(sizeof(mtpTypeId))) {
+		return false;
+	}
+	const auto type = *reinterpret_cast<const mtpTypeId*>(data.constData());
+	switch (type) {
+	case mtpc_messages_getScheduledHistory:
+	case mtpc_messages_getScheduledMessages:
+	case mtpc_messages_getQuickReplyMessages:
+		return false;
+	}
+	return true;
+}
 
 class HookCancellation final : public std::runtime_error {
 public:
@@ -106,6 +123,7 @@ QJsonObject Message(Main::Session &session, not_null<HistoryItem*> item) {
 				{ u"location"_q, Encode(location.tl(session.userId())) },
 				{ u"dc_id"_q, location.dcId() },
 				{ u"size"_q, double(document->size) },
+				{ u"id"_q, QString::number(document->id) },
 				{ u"name"_q, document->filename() },
 				{ u"mime_type"_q, document->mimeString() },
 			});
@@ -151,6 +169,19 @@ PluginClient::PluginClient(not_null<Core::PluginRuntime*> runtime)
 		}
 	}, _lifetime);
 	watchAccounts();
+	Ovygram::Menus::SetDescriber([](
+			Main::Session &session,
+			PeerData *peer,
+			HistoryItem *item) {
+		auto result = QJsonObject();
+		if (peer) {
+			result.insert(u"chat"_q, Chat(session, peer));
+		}
+		if (item) {
+			result.insert(u"message"_q, Message(session, item));
+		}
+		return result;
+	});
 	_ui = std::make_unique<Ovygram::PluginUi>([=](QJsonObject event) {
 		try {
 			dispatch({
@@ -243,11 +274,17 @@ QJsonValue PluginClient::dispatch(QJsonObject request) {
 	return value.value(u"result"_q);
 }
 
+// reply() and fail() run from Qt, rpl and MTP callbacks, and from the catch
+// block of receive(), where an exception would terminate the client.
 void PluginClient::reply(const QString &id, QJsonValue result) {
-	dispatch({
-		{ u"action"_q, u"client_reply"_q },
-		{ u"request"_q, QJsonObject{ { u"id"_q, id }, { u"result"_q, result } } },
-	});
+	try {
+		dispatch({
+			{ u"action"_q, u"client_reply"_q },
+			{ u"request"_q, QJsonObject{ { u"id"_q, id }, { u"result"_q, result } } },
+		});
+	} catch (const std::exception &error) {
+		LOG(("Ovygram reply: %1").arg(QString::fromUtf8(error.what())));
+	}
 }
 
 void PluginClient::fail(
@@ -255,17 +292,21 @@ void PluginClient::fail(
 		const QString &name,
 		const QString &description,
 		int code) {
-	dispatch({
-		{ u"action"_q, u"client_reply"_q },
-		{ u"request"_q, QJsonObject{
-			{ u"id"_q, id },
-			{ u"error"_q, QJsonObject{
-				{ u"code"_q, code },
-				{ u"name"_q, name },
-				{ u"description"_q, description },
+	try {
+		dispatch({
+			{ u"action"_q, u"client_reply"_q },
+			{ u"request"_q, QJsonObject{
+				{ u"id"_q, id },
+				{ u"error"_q, QJsonObject{
+					{ u"code"_q, code },
+					{ u"name"_q, name },
+					{ u"description"_q, description },
+				} },
 			} },
-		} },
-	});
+		});
+	} catch (const std::exception &error) {
+		LOG(("Ovygram reply: %1").arg(QString::fromUtf8(error.what())));
+	}
 }
 
 void PluginClient::receive(const QByteArray &request) {
@@ -313,6 +354,9 @@ void PluginClient::receive(const QByteArray &request) {
 			return;
 		} else if (method.startsWith(u"widgets."_q)) {
 			reply(id, Ovygram::Widgets::Request(command));
+			return;
+		} else if (method.startsWith(u"native."_q)) {
+			reply(id, Ovygram::Native::Request(command));
 			return;
 		} else if (method == u"python_ui"_q) {
 			reply(id, dispatch({
@@ -423,9 +467,34 @@ void PluginClient::rpc(const QJsonObject &command, not_null<Main::Session*> owne
 			reinterpret_cast<const char*>(buffer.constData()),
 			buffer.size() * sizeof(mtpPrime)).toBase64());
 		auto updates = MTPUpdates();
+		auto affected = MTPmessages_AffectedMessages();
 		auto from = buffer.constData();
-		if (updates.read(from, from + buffer.size()) && from == buffer.constData() + buffer.size()) {
+		const auto till = buffer.constData() + buffer.size();
+		if (command.value(u"feed"_q).toString() == u"delete"_q) {
+			if (affected.read(from, till) && from == till) {
+				// Delete locally first: the affected pts only say that
+				// the deletion is already applied.
+				const auto peerId = PeerId(command.value(u"chat_id"_q).toString().toULongLong());
+				auto ids = QVector<MTPint>();
+				for (const auto &value : command.value(u"message_ids"_q).toArray()) {
+					ids.push_back(MTP_int(value.toInteger()));
+				}
+				if (peerIsChannel(peerId)) {
+					weak->data().processMessagesDeleted(peerId, ids);
+					if (const auto peer = weak->data().peerLoaded(peerId)) {
+						weak->api().applyAffectedMessages(peer, affected);
+					}
+				} else {
+					weak->data().processNonChannelMessagesDeleted(ids);
+					// Outside channels the pts are common, any such peer works.
+					weak->api().applyAffectedMessages(weak->user(), affected);
+				}
+			}
+		} else if (updates.read(from, till) && from == till) {
 			weak->api().updates().applyUpdates(updates);
+		} else if (!LocalHistoryRequest(data)) {
+			// Scheduled messages and quick replies have their own message
+			// IDs and don't belong to the chat history.
 		} else {
 			auto messages = MTPmessages_Messages();
 			from = buffer.constData();
@@ -531,16 +600,17 @@ bool PluginClient::beforeRpc(
 	const auto weak = base::make_weak(owner);
 	const auto reject = [&](const QString &type, const QString &message) {
 		notifyHookError(message);
-		if (auto fail = std::move(callbacks.fail)) {
-			// Complete after Sender and Histories have registered the request.
-			QTimer::singleShot(0, this, [=] {
-				if (weak) {
-					fail(
-						MTP::Error::Local(type, message),
-						MTP::Response{ {}, 0, requestId });
-				}
-			});
-		}
+		// Complete after Sender and Histories have registered the request.
+		// The handlers stay in MTP::Instance, so a request cancelled
+		// meanwhile (its Sender destroyed, for example) gets no callback.
+		QTimer::singleShot(0, this, [=] {
+			if (weak) {
+				auto reply = mtpBuffer();
+				MTP::Error::MTPLocal(type, message).write(reply);
+				weak->mtp().processCallback(
+					MTP::Response{ std::move(reply), 0, requestId });
+			}
+		});
 		return false;
 	};
 	auto requestData = QString();
@@ -593,6 +663,10 @@ bool PluginClient::beforeRpc(
 				owner->data().unregisterMessageSentData(randomId);
 				owner->data().registerMessageSentData(randomId, item->history()->peer->id, text.text);
 				item->setText(std::move(text));
+				// setText() repaints only a message that had text before,
+				// and a media message may have had no caption.
+				owner->data().requestItemTextRefresh(item);
+				item->history()->updateChatListEntry();
 			}
 		}
 	} catch (const HookCancellation &error) {
@@ -602,6 +676,9 @@ bool PluginClient::beforeRpc(
 	}
 	const auto original = std::make_shared<MTP::ResponseHandler>(std::move(callbacks));
 	const auto guard = QPointer(this);
+	// Set once after_rpc saw the response: if the caller then fails to parse
+	// it, MTP reports a parse error to fail(), which must not run it again.
+	const auto handled = std::make_shared<bool>(false);
 	callbacks.done = [=](const MTP::Response &response) mutable {
 		if (!guard) {
 			return original->done ? original->done(response) : true;
@@ -609,6 +686,7 @@ bool PluginClient::beforeRpc(
 		if (!weak) {
 			return true;
 		}
+		*handled = true;
 		auto changed = response;
 		auto error = std::optional<MTP::Error>();
 		if (!afterRpc(accountId, requestId, requestData, stack, changed, error)) {
@@ -622,12 +700,15 @@ bool PluginClient::beforeRpc(
 	callbacks.fail = [=](
 			const MTP::Error &error,
 			const MTP::Response &response) {
-		if (!guard) {
+		// A temporary error (flood wait, server error) is usually retried by
+		// MTP, and after_rpc sees the final result instead.
+		if (!guard || *handled || MTP::IsTemporaryError(error)) {
 			return original->fail ? original->fail(error, response) : false;
 		}
 		if (!weak) {
 			return true;
 		}
+		*handled = true;
 		auto changed = response;
 		auto changedError = std::optional<MTP::Error>(error);
 		if (!afterRpc(accountId, requestId, requestData, stack, changed, changedError)) {
@@ -673,18 +754,31 @@ bool PluginClient::afterRpc(
 		}).toObject();
 		if (result.value(u"error"_q).isObject()) {
 			const auto changed = result.value(u"error"_q).toObject();
+			auto code = changed.value(u"code"_q).toInt();
+			auto name = changed.value(u"name"_q).toString();
+			if (code < 0 || code >= 500) {
+				// MTP would resend the request for these codes.
+				code = 400;
+			}
+			if (MTP::IsFloodError(name)) {
+				name = u"PLUGIN_"_q + name;
+			}
 			error = MTP::Error(MTP_rpc_error(
-				MTP_int(changed.value(u"code"_q).toInt()),
-				MTP_bytes((changed.value(u"name"_q).toString()
+				MTP_int(code),
+				MTP_bytes((name
 					+ u": "_q + changed.value(u"description"_q).toString()).toUtf8())));
 		} else {
 			response.reply = Buffer(Decode(result.value(u"data"_q)));
 			error.reset();
 		}
 		return true;
-	} catch (const std::exception &failure) {
+	} catch (const HookCancellation &failure) {
 		notifyHookError(QString::fromUtf8(failure.what()));
 		return false;
+	} catch (const std::exception &failure) {
+		// A broken hook must not break Telegram: keep the server answer.
+		notifyHookError(QString::fromUtf8(failure.what()));
+		return true;
 	}
 }
 
@@ -709,9 +803,14 @@ bool PluginClient::beforeUpdates(Main::Session &session, MTPUpdates &updates) {
 		}
 		updates = std::move(changed);
 		return true;
-	} catch (const std::exception &error) {
+	} catch (const HookCancellation &error) {
+		// The hook asked to skip these updates.
 		notifyHookError(QString::fromUtf8(error.what()));
 		return false;
+	} catch (const std::exception &error) {
+		// A broken hook must not lose server updates: apply them unchanged.
+		notifyHookError(QString::fromUtf8(error.what()));
+		return true;
 	}
 }
 

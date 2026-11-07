@@ -1799,13 +1799,6 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	if (g.width() < 1) {
 		return;
 	}
-#ifdef OVYGRAM_ENABLED
-	// Runs on every return below, over the finished message.
-	const auto ovygramDecorations = gsl::finally([&] {
-		Ovygram::PaintMessage(p, data(), g);
-	});
-#endif // OVYGRAM_ENABLED
-
 	const auto item = data();
 	const auto media = this->media();
 
@@ -1854,6 +1847,16 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	if (isHidden()) {
 		return;
 	}
+#ifdef OVYGRAM_ENABLED
+	// Runs on every return below, over the finished message. The bubble
+	// shifts are undone by then, so they are applied again.
+	const auto ovygramDecorations = gsl::finally([&] {
+		const auto shift = gestureShift + selectionTranslation;
+		p.translate(shift, 0);
+		Ovygram::PaintMessage(p, data(), g);
+		p.translate(-shift, 0);
+	});
+#endif // OVYGRAM_ENABLED
 
 	const auto entry = logEntryOriginal();
 	const auto check = factcheckBlock();

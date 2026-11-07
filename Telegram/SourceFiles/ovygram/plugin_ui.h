@@ -2,6 +2,9 @@
 
 #include "base/object_ptr.h"
 
+#include <rpl/event_stream.h>
+#include <rpl/producer.h>
+
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
@@ -41,6 +44,13 @@ public:
 		int top,
 		int width);
 
+	// For the section in the main column, see plugin_section.h.
+	[[nodiscard]] Ui::RpWidget *sectionContent(const QString &objectId) const;
+	[[nodiscard]] QString sectionTitle(const QString &objectId) const;
+	[[nodiscard]] rpl::producer<> sectionClosed(const QString &objectId) const;
+	// Nothing can show the section any more: close the surface.
+	void sectionGone(const QString &objectId);
+
 private:
 	struct Object;
 
@@ -66,6 +76,8 @@ private:
 	std::map<QString, std::unique_ptr<Object>> _objects;
 	std::vector<QPointer<QWidget>> _chats;
 	bool _relayoutQueued = false;
+	bool _updating = false;
+	rpl::event_stream<QString> _sectionClosed;
 
 };
 

@@ -363,6 +363,109 @@ class DesktopUiTests(unittest.TestCase):
         self.assertEqual(self.commands_list()[-1]["method"], "ui.decoration.set")
         self.assertNotIn(plugin_id, self.manager.errors)
 
+    def test_menu_item_click_gets_chat_and_message(self):
+        clicks = []
+        item = self.as_plugin("plugin.a", lambda: ui.add_menu_item(
+            "message", "Скопировать", clicks.append, kinds=["user", "chat"]))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["menu"], command["text"], command["kinds"]),
+                         ("ui.menu.add", "message", "Скопировать", ["user", "chat"]))
+        self.event(plugin_id="plugin.a", type="menu_click", rule_id=command["rule_id"], value={
+            "account_id": "42", "chat": self.native_chat(),
+            "message": {"account_id": "42", "id": "9", "chat_id": "777", "text": "привет",
+                        "date": 0, "outgoing": False}})
+        self.assertEqual(len(clicks), 1)
+        menu = clicks[0]
+        self.assertEqual((menu.account_id, menu.chat.id, menu.message.id, menu.message.text),
+                         ("42", 777, 9, "привет"))
+        self.as_plugin("plugin.a", item.remove)
+        self.assertEqual([item["method"] for item in self.commands_list()], ["ui.menu.remove"])
+        self.event(plugin_id="plugin.a", type="menu_click", rule_id=command["rule_id"],
+                   value={"account_id": "42"})
+        self.assertEqual(len(clicks), 1)
+
+    def test_main_menu_item_and_validation(self):
+        clicks = []
+        self.as_plugin("plugin.a", lambda: ui.add_menu_item("main", "Сводка", clicks.append))
+        command = self.commands_list()[-1]
+        self.event(plugin_id="plugin.a", type="menu_click", rule_id=command["rule_id"],
+                   value={"account_id": "42"})
+        self.assertEqual((clicks[0].account_id, clicks[0].chat, clicks[0].message), ("42", None, None))
+        for arguments in (("sidebar", "x"), ("main", ""), ("main", "x" * 65)):
+            with self.assertRaises(ValueError):
+                self.as_plugin("plugin.a", lambda: ui.add_menu_item(*arguments, print))
+        with self.assertRaises(ValueError):
+            self.as_plugin("plugin.a", lambda: ui.add_menu_item("main", "x", print, kinds=["user"]))
+        with self.assertRaises(ValueError):
+            self.as_plugin("plugin.a", lambda: ui.add_menu_item("chat", "x", print, kinds=["bot"]))
+
+    def test_menus_example_registers_its_items(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/menus.plugin"))
+        self.manager.enable(plugin_id)
+        menus = [item["menu"] for item in self.commands_list() if item["method"] == "ui.menu.add"]
+        self.assertEqual(menus, ["main", "chat", "message", "message"])
+        self.manager.disable(plugin_id)
+        self.assertIn("ui.close_plugin", [item["method"] for item in self.commands_list()])
+
+    def test_section_is_shown_and_closed_by_the_window(self):
+        closed = []
+        section = self.as_plugin("plugin.a", lambda: ui.Section(
+            ui.Column(ui.Text("x")), title="Страница", on_close=lambda: closed.append(True)).show())
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["kind"], command["title"]),
+                         ("ui.show", "section", "Страница"))
+        # The window history dropped the section.
+        self.event(plugin_id="plugin.a", object_id=section.id, type="closed")
+        self.assertTrue(section.closed)
+        self.assertEqual(closed, [True])
+        with self.assertRaises(ui.ObjectDestroyed):
+            section.update(section.content.children[0], text="y")
+
+    def test_section_example_opens_from_the_main_menu(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/section.plugin"))
+        self.manager.enable(plugin_id)
+        menus = [item for item in self.commands_list() if item["method"] == "ui.menu.add"]
+        self.assertEqual([item["menu"] for item in menus], ["main"])
+
+    def test_native_window_events_and_signals(self):
+        from desktop import native
+        windows, titles = [], []
+        watch = self.as_plugin("plugin.a", lambda: native.on_window(windows.append))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["enabled"]), ("ui.native.windows", True))
+        event = {"event": "shown", "handle": "5", "cls": "Ui::PopupMenu", "kind": "popup", "title": ""}
+        self.event(plugin_id="plugin.a", type="native_window", rule_id=command["rule_id"], value=event)
+        self.assertEqual(windows, [event])
+        connection = self.as_plugin("plugin.a", lambda: native.connect(
+            {"handle": "7"}, "windowTitleChanged", titles.append))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["handle"], command["signal"]),
+                         ("ui.native.connect", "7", "windowTitleChanged"))
+        self.event(plugin_id="plugin.a", type="native_signal", rule_id=command["rule_id"],
+                   value=["Telegram (3)"])
+        self.assertEqual(titles, ["Telegram (3)"])
+        self.as_plugin("plugin.a", watch.remove)
+        self.as_plugin("plugin.a", connection.remove)
+        self.assertEqual([item["method"] for item in self.commands_list()],
+                         ["ui.native.disconnect", "ui.native.disconnect"])
+
+    def test_native_invoke_sends_a_request(self):
+        from desktop import native
+        future = self.runtime.schedule(self.owners["plugin.a"],
+                                       native.invoke("12", "setWindowTitle", "x"))
+        request = self.wait_for("native.invoke")[0]
+        self.assertEqual((request["handle"], request["name"], request["args"]),
+                         ("12", "setWindowTitle", ["x"]))
+        self.runtime.complete({"id": request["id"], "result": None})
+        self.assertIsNone(future.result(timeout=2))
+
+    def test_native_example_watches_windows(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/native_events.plugin"))
+        self.manager.enable(plugin_id)
+        methods = {item["method"] for item in self.commands_list()}
+        self.assertTrue({"ui.native.windows", "ui.keys.add"} <= methods)
+        self.manager.disable(plugin_id)
+
     def load_math(self):
         plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/math_autocomplete.plugin"))
         self.manager.enable(plugin_id)
@@ -416,7 +519,7 @@ class DesktopUiTests(unittest.TestCase):
         self.assertEqual((replace["start"], replace["end"], replace["text"], replace["select"]), (4, 4, "4", True))
         space = [item for item in sent if item["method"] == "ui.keys.add"][0]
         self.assertEqual((space["sequence"], space["element"], space["replace"]), ("Space", "compose.field", True))
-        self.change(plugin_id, rule_id, "1+3=4", 4, (4, 5))  # Our own edit: ignored.
+        # The client doesn't report the plugin's own edits back.
         self.assertEqual(instance.suggestion, (4, 5))
         self.event(plugin_id=plugin_id, type="key", rule_id=space["rule_id"])
         self.answer_state("1+3=4", 5, (4, 5))
@@ -424,7 +527,6 @@ class DesktopUiTests(unittest.TestCase):
         self.assertEqual((accept["start"], accept["end"], accept["text"]), (5, 5, " "))
         self.assertEqual(instance.accepted, (4, 6))
         backspace = [item for item in self.commands_list() if item["method"] == "ui.keys.add"]
-        self.change(plugin_id, rule_id, "1+3=4 ", 6)  # Our own edit: ignored.
         self.assertIsNotNone(instance.backspace_rule)
         self.event(plugin_id=plugin_id, type="key", rule_id=instance.backspace_rule.id)
         self.answer_state("1+3=4 ", 6)

@@ -12,19 +12,27 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QtEndian>
 
 namespace MTP::details {
+namespace {
+
+// Resolved on each use: Transport::Shutdown() clears it before deleting
+// the transport, so a socket never keeps a pointer to a deleted one.
+[[nodiscard]] WebProxy::Transport *CurrentTransport() {
+	return WebProxy::Transport::Instance();
+}
+
+} // namespace
 
 WebProxySocket::WebProxySocket(
 		not_null<QThread*> thread,
 		const ProxyData &proxy)
 : AbstractSocket(thread)
-, _streamId(WebProxy::Transport::NextStreamId())
-, _transport(WebProxy::Transport::Instance()) {
+, _streamId(WebProxy::Transport::NextStreamId()) {
 	Expects(proxy.type == ProxyData::Type::Web);
 }
 
 WebProxySocket::~WebProxySocket() {
-	if (_transport) {
-		_transport->closeStream(_streamId);
+	if (const auto transport = CurrentTransport()) {
+		transport->closeStream(_streamId);
 	}
 }
 
@@ -32,8 +40,8 @@ void WebProxySocket::connectToHost(const QString &, int) {
 	Expects(_state == State::NotConnected);
 
 	_state = State::Connecting;
-	if (_transport) {
-		_transport->registerStream(_streamId, {
+	if (const auto transport = CurrentTransport()) {
+		transport->registerStream(_streamId, {
 			.context = this,
 			.connected = [=] { transportConnected(); },
 			.data = [=](QByteArray data) {
@@ -96,8 +104,8 @@ int64 WebProxySocket::read(bytes::span buffer) {
 		_incoming.remove(0, _incomingOffset);
 		_incomingOffset = 0;
 	}
-	if (_transport) {
-		_transport->grantWindow(_streamId, count);
+	if (const auto transport = CurrentTransport()) {
+		transport->grantWindow(_streamId, count);
 	}
 	return count;
 }
@@ -107,7 +115,8 @@ void WebProxySocket::write(
 		bytes::const_span buffer) {
 	Expects(!buffer.empty());
 
-	if (!isConnected() || !_transport) {
+	const auto transport = CurrentTransport();
+	if (!isConnected() || !transport) {
 		return;
 	}
 	auto data = QByteArray(
@@ -117,7 +126,7 @@ void WebProxySocket::write(
 		memcpy(data.data(), prefix.data(), prefix.size());
 	}
 	memcpy(data.data() + prefix.size(), buffer.data(), buffer.size());
-	_transport->sendData(_streamId, std::move(data));
+	transport->sendData(_streamId, std::move(data));
 }
 
 int32 WebProxySocket::debugState() {

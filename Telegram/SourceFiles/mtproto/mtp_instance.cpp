@@ -1031,6 +1031,12 @@ void Instance::Private::sendRequest(
 		mtpRequestId afterRequestId) {
 #ifdef OVYGRAM_ENABLED
 	if (needsLayer && !Api::PluginBeforeRpc(_instance, requestId, request, callbacks)) {
+		// Rejected by a plugin. The handlers stay registered, so the deferred
+		// failure goes through processCallback() and cancel() still drops it.
+		if (callbacks.done || callbacks.fail) {
+			QMutexLocker locker(&_parserMapLock);
+			_parserMap.emplace(requestId, std::move(callbacks));
+		}
 		return;
 	}
 #endif

@@ -56,16 +56,13 @@ class MathAutocompletePlugin(BasePlugin):
     def on_plugin_load(self):
         self.suggestion = None  # (start, end) of the selected suggestion.
         self.accepted = None    # (start, end) of an accepted result and its space.
-        self.expected = None    # Field text right after our own edit.
         self.space_rule = None
         self.backspace_rule = None
         ui.on_compose_change(self.on_change)
 
     def on_change(self, state):
+        # Only user edits arrive here, not the plugin's own replace calls.
         text = state["text"]
-        if text == self.expected:
-            return  # Our own edit.
-        self.expected = None
         self.clear()
         cursor = state["cursor"]
         if state["selection_start"] != state["selection_end"]:
@@ -77,7 +74,6 @@ class MathAutocompletePlugin(BasePlugin):
             result = evaluate(match.group(1))
         except (ValueError, ZeroDivisionError, SyntaxError, OverflowError):
             return
-        self.expected = text[:cursor] + result + text[cursor:]
         self.suggestion = (cursor, cursor + len(result))
         ui.replace_compose_text(cursor, cursor, result, select=True)
         self.space_rule = ui.on_key("Space", self.on_space, replace=True, element="compose.field")
@@ -93,8 +89,6 @@ class MathAutocompletePlugin(BasePlugin):
         if self.suggestion is not None and (start, end) == self.suggestion:
             # Keep the result, drop the selection and type the space.
             result_start = self.suggestion[0]
-            text = state["text"]
-            self.expected = text[:end] + " " + text[end:]
             ui.replace_compose_text(end, end, " ")
             self.clear()
             self.accepted = (result_start, end + 1)
