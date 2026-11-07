@@ -12,6 +12,8 @@ import zipfile
 
 UPSTREAM = '3a2a9a34e833d3243a13787215b8a7cdcf5dc3c3'
 CLIENT_VERSION = '7.3.5'
+# Keep in sync with OvygramVersionStr in Telegram/SourceFiles/core/version.h.
+OVYGRAM_VERSION = '0.1.0'
 GIB = 1024 ** 3
 
 
@@ -106,7 +108,8 @@ def package(source, target, plugins=False, configuration='Debug'):
         raise RuntimeError('No compiled client executable; refusing to package.')
     target.mkdir(parents=True, exist_ok=True)
     name = 'ovygram' if plugins else 'upstream-baseline'
-    archive = target / f'{name}-{CLIENT_VERSION}-win64-{configuration.lower()}.zip'
+    version = f'{OVYGRAM_VERSION}-{CLIENT_VERSION}' if plugins else CLIENT_VERSION
+    archive = target / f'{name}-{version}-win64-{configuration.lower()}.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as output:
         output.write(executable, binary_name)
         output.writestr('TelegramForcePortable', '')

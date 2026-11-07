@@ -29,6 +29,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "styles/style_dialogs.h" // st::dialogsTextWidthMin
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/chat_list_filter.h"
+#endif // OVYGRAM_ENABLED
+
 namespace Dialogs {
 namespace {
 
@@ -368,6 +372,11 @@ DateText Entry::chatListTimestampText(
 }
 
 void Entry::setChatListExistence(bool exists) {
+#ifdef OVYGRAM_ENABLED
+	if (exists && Ovygram::HiddenFromChatList(this)) {
+		exists = false;
+	}
+#endif // OVYGRAM_ENABLED
 	if (exists && _sortKeyInChatList) {
 		owner().refreshChatListEntry(this);
 		updateChatListEntry();

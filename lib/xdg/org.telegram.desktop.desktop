@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=Telegram
+Name=Ovygram
 Comment=New era of messaging
-TryExec=Telegram
-Exec=Telegram -- %U
+TryExec=Ovygram
+Exec=Ovygram -- %U
 Icon=org.telegram.desktop
 Terminal=false
-StartupWMClass=TelegramDesktop
+StartupWMClass=Ovygram
 Type=Application
 Categories=Chat;Network;InstantMessaging;Qt;
 MimeType=x-scheme-handler/tg;x-scheme-handler/tonsite;x-scheme-handler/ton;
@@ -17,6 +17,6 @@ X-GNOME-UsesNotifications=true
 X-GNOME-SingleWindow=true
 
 [Desktop Action quit]
-Exec=Telegram -quit
-Name=Quit Telegram
+Exec=Ovygram -quit
+Name=Quit Ovygram
 Icon=application-exit

@@ -1,0 +1,136 @@
+import ast
+import operator
+import re
+
+from base_plugin import BasePlugin
+from desktop import ui
+
+__id__ = "desktop.math_autocomplete"
+__name__ = "Калькулятор в строке ввода"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Выражение вида 1+3= получает результат подсказкой: пробел принимает, "
+                   "Backspace убирает его целиком, даже после принятия.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+# The expression right before "=" at the cursor: digits, operators, brackets.
+EXPRESSION = re.compile(r"([0-9.,+\-*/%()\s]*[0-9)])\s*=$")
+OPERATORS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod, ast.Pow: operator.pow,
+}
+
+
+def evaluate(text):
+    """Evaluates arithmetic only; anything else raises ValueError."""
+    def value(node):
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            return node.value
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            result = value(node.operand)
+            return -result if isinstance(node.op, ast.USub) else result
+        if isinstance(node, ast.BinOp) and type(node.op) in OPERATORS:
+            left, right = value(node.left), value(node.right)
+            if isinstance(node.op, ast.Pow) and (abs(right) > 64 or abs(left) > 10 ** 6):
+                raise ValueError("Слишком большая степень.")
+            return OPERATORS[type(node.op)](left, right)
+        raise ValueError("Не арифметика.")
+
+    tree = ast.parse(text.replace(",", "."), mode="eval")
+    if not any(isinstance(node, ast.BinOp) for node in ast.walk(tree)):
+        raise ValueError("Нужна хотя бы одна операция.")
+    result = value(tree.body)
+    if isinstance(result, float):
+        if result != result or result in (float("inf"), float("-inf")):
+            raise ValueError("Результат не число.")
+        if result.is_integer() and abs(result) < 1e15:
+            return str(int(result))
+        return f"{result:.10g}"
+    return str(result)
+
+
+class MathAutocompletePlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.suggestion = None  # (start, end) of the selected suggestion.
+        self.accepted = None    # (start, end) of an accepted result and its space.
+        self.expected = None    # Field text right after our own edit.
+        self.space_rule = None
+        self.backspace_rule = None
+        ui.on_compose_change(self.on_change)
+
+    def on_change(self, state):
+        text = state["text"]
+        if text == self.expected:
+            return  # Our own edit.
+        self.expected = None
+        self.clear()
+        cursor = state["cursor"]
+        if state["selection_start"] != state["selection_end"]:
+            return
+        match = EXPRESSION.search(text[:cursor])
+        if match is None:
+            return
+        try:
+            result = evaluate(match.group(1))
+        except (ValueError, ZeroDivisionError, SyntaxError, OverflowError):
+            return
+        self.expected = text[:cursor] + result + text[cursor:]
+        self.suggestion = (cursor, cursor + len(result))
+        ui.replace_compose_text(cursor, cursor, result, select=True)
+        self.space_rule = ui.on_key("Space", self.on_space, replace=True, element="compose.field")
+
+    def on_space(self):
+        self.run_async(self.accept())
+
+    async def accept(self):
+        state = await ui.compose_state()
+        if state is None:
+            return
+        start, end = state["selection_start"], state["selection_end"]
+        if self.suggestion is not None and (start, end) == self.suggestion:
+            # Keep the result, drop the selection and type the space.
+            result_start = self.suggestion[0]
+            text = state["text"]
+            self.expected = text[:end] + " " + text[end:]
+            ui.replace_compose_text(end, end, " ")
+            self.clear()
+            self.accepted = (result_start, end + 1)
+            self.backspace_rule = ui.on_key("Backspace", self.on_backspace, replace=True,
+                                            element="compose.field")
+        else:
+            # The suggestion is gone: type the space the rule took.
+            self.clear()
+            ui.replace_compose_text(start, end, " ")
+
+    def on_backspace(self):
+        self.run_async(self.remove_accepted())
+
+    async def remove_accepted(self):
+        state = await ui.compose_state()
+        if state is None:
+            return
+        accepted, self.accepted = self.accepted, None
+        if self.backspace_rule is not None:
+            self.backspace_rule.remove()
+            self.backspace_rule = None
+        start, end, cursor = state["selection_start"], state["selection_end"], state["cursor"]
+        if accepted is not None and start == end and cursor == accepted[1]:
+            # Right after an accepted result: remove it with its space.
+            ui.replace_compose_text(accepted[0], accepted[1], "")
+        elif start != end:
+            ui.replace_compose_text(start, end, "")
+        elif cursor > 0:
+            ui.replace_compose_text(cursor - 1, cursor, "")
+
+    def clear(self):
+        self.suggestion = None
+        if self.space_rule is not None:
+            self.space_rule.remove()
+            self.space_rule = None
+        if self.backspace_rule is not None and self.accepted is not None:
+            self.backspace_rule.remove()
+            self.backspace_rule = None
+            self.accepted = None

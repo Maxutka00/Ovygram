@@ -1,0 +1,75 @@
+from base_plugin import BasePlugin
+from desktop import ui
+from desktop_utils import run_on_ui, set_timer
+
+__id__ = "desktop.widget_inspector"
+__name__ = "Инспектор виджетов"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = "Ctrl+Shift+I показывает дерево виджетов окна и подсвечивает верхнюю панель чата."
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+def find(node, cls):
+    if node.get("cls") == cls and node.get("visible"):
+        return node
+    for child in node.get("children", ()):
+        result = find(child, cls)
+        if result is not None:
+            return result
+    return None
+
+
+def lines(node, depth=0, limit=200, out=None):
+    out = [] if out is None else out
+    if len(out) >= limit or not node.get("visible"):
+        return out
+    label = node["cls"]
+    for key in ("element", "accessible", "name"):
+        if node.get(key):
+            label += f"  [{key}: {node[key]}]"
+    out.append("  " * depth + label)
+    for child in node.get("children", ()):
+        lines(child, depth + 1, limit, out)
+    return out
+
+
+class WidgetInspectorPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.overlay = None
+        ui.on_key("Ctrl+Shift+I", self.inspect, replace=True)
+
+    def inspect(self):
+        self.run_async(self.show_tree())
+
+    async def show_tree(self):
+        tree = await ui.widget_tree(depth=12)
+        if tree is None:
+            return
+        text = "\n".join(lines(tree))
+        top_bar = find(tree, "HistoryView::TopBarWidget")
+
+        def show():
+            copy = ui.Button("Копировать", width="fit")
+
+            def copied():
+                ui.set_clipboard(text)
+                window.update(copy, text="Скопировано")
+                set_timer(2, lambda: None if window.closed else window.update(copy, text="Копировать"))
+
+            copy.handlers["click"] = copied
+            window = ui.Window(
+                ui.Column(ui.Row(ui.Spacer(0, stretch=1), copy), ui.Text(text)),
+                title="Виджеты окна", width=640, height=720).show()
+            if top_bar is not None:
+                if self.overlay is not None:
+                    self.overlay.close()
+                width, height = top_bar["geometry"][2], top_bar["geometry"][3]
+                self.overlay = ui.Overlay(top_bar, ui.Canvas(height, [
+                    ui.fill_rect(0, 0, width, height, "#3300bcd4"),
+                    ui.line(0, height - 1, width, height - 1, "#00bcd4", width=2),
+                ])).show()
+
+        await run_on_ui(show)

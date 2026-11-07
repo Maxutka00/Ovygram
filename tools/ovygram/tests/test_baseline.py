@@ -68,6 +68,12 @@ class BaselineTests(unittest.TestCase):
             self.assertEqual(set(source.namelist()), {
                 'Telegram.exe', 'TelegramForcePortable', 'BASELINE.txt'})
 
+    def test_versions_match_client_source(self):
+        source = (Path(__file__).parents[3] / 'Telegram/SourceFiles/core/version.h').read_text(
+            encoding='utf-8')
+        self.assertIn(f'AppVersionStr = "{baseline.CLIENT_VERSION}";', source)
+        self.assertIn(f'OvygramVersionStr = "{baseline.OVYGRAM_VERSION}";', source)
+
     def test_plugin_package_uses_release_outputs(self):
         debug = self.root / 'out/Debug'
         debug.mkdir(parents=True)
@@ -78,7 +84,7 @@ class BaselineTests(unittest.TestCase):
         (release / 'Ovygram.exe').write_bytes(b'release executable')
         (runtime / 'ovygram_host.dll').write_bytes(b'release host')
         archive = baseline.package(self.root, self.root / 'artifacts', True, 'Release')
-        self.assertEqual(archive.name, 'ovygram-7.3.5-win64-release.zip')
+        self.assertEqual(archive.name, 'ovygram-0.1.0-7.3.5-win64-release.zip')
         with zipfile.ZipFile(archive) as source:
             self.assertEqual(source.read('Ovygram.exe'), b'release executable')
             self.assertEqual(source.read('python/ovygram_host.dll'), b'release host')

@@ -52,7 +52,7 @@ def _chat(chat):
     return chat
 
 
-async def rpc(account, request, *, dc_id=0, timeout=60):
+async def rpc(account, request, *, dc_id=0, timeout=60, _feed=""):
     account_id = _account(account)
     if not isinstance(request, tl.TLObject) or not request._tl["function"]:
         raise TypeError("Ожидается TL-запрос из desktop.tl.")
@@ -67,7 +67,7 @@ async def rpc(account, request, *, dc_id=0, timeout=60):
         elif peer.constructor_name == "inputPeerUser":
             chat_id = str(peer.user_id)
     response = await _request("rpc", account_id, data=data, dc_id=dc_id,
-                              timeout=timeout, chat_id=chat_id)
+                              timeout=timeout, chat_id=chat_id, feed=_feed)
     return tl.decode(base64.b64decode(response["data"], validate=True), tl.response_type(request))
 
 
@@ -91,7 +91,7 @@ async def send_message(chat, text, *, reply_to=None, silent=False, no_webpage=Fa
         peer=chat.input_peer, message=text, random_id=secrets.randbits(63),
         reply_to=reply, silent=silent, no_webpage=no_webpage))
     if result.constructor_name == "updateShortSentMessage":
-        message = await get_message(chat, result.id)
+        message = await _fetch_message(chat, result.id, "new")
         if message is not None:
             from desktop_utils import run_on_ui
             from .models import Event
@@ -128,13 +128,18 @@ async def forward_messages(source, target, message_ids, *, silent=False):
 
 
 async def get_message(chat, message_id):
+    return await _fetch_message(chat, message_id, "")
+
+
+async def _fetch_message(chat, message_id, feed):
     _chat(chat)
     ids = [tl.inputMessageID(id=message_id)]
     if chat.kind == "channel":
         peer = chat.input_peer
         result = await rpc(chat.account_id, tl.channels.getMessages(
-            channel=tl.inputChannel(channel_id=peer.channel_id, access_hash=peer.access_hash), id=ids))
+            channel=tl.inputChannel(channel_id=peer.channel_id, access_hash=peer.access_hash), id=ids),
+            _feed=feed)
     else:
-        result = await rpc(chat.account_id, tl.messages.getMessages(id=ids))
+        result = await rpc(chat.account_id, tl.messages.getMessages(id=ids), _feed=feed)
     return next((message_from_tl(chat.account_id, item) for item in result.messages
                  if item.constructor_name in ("message", "messageService")), None)

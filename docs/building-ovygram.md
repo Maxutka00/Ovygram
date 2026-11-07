@@ -202,7 +202,7 @@ attempt may manage to save the dependencies but not to build the client. Old
 caches may not fit after a toolchain or recipe change.
 
 The `plugins` mode builds Ovygram, and `build` builds the unchanged pinned
-Telegram baseline. The future package names are `ovygram-7.3.5-win64-release.zip`
+Telegram baseline. The future package names are `ovygram-0.1.0-7.3.5-win64-release.zip`
 and `upstream-baseline-7.3.5-win64-debug.zip` respectively. There is no real new
 ZIP at the moment; the history of earlier personal builds is not carried over to
 this repository.

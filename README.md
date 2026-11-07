@@ -64,7 +64,7 @@ it, because binaries built on Arch require an equally new glibc.
    cmake --build out --config Release --target Telegram -j 4
    ```
 
-The result is `out/Release/Telegram`, with its Python runtime in
+The result is `out/Release/Ovygram`, with its Python runtime in
 `out/Release/python`.
 
 To link the system Python 3.13 or newer instead of building CPython, add

@@ -222,7 +222,10 @@ void ConfirmRemove(
 		Fn<void()> remove) {
 	controller->show(Ui::MakeConfirmBox({
 		.text = rpl::single(u"Удалить этот плагин и его настройки?"_q),
-		.confirmed = std::move(remove),
+		.confirmed = [=](Fn<void()> close) {
+			close();
+			remove();
+		},
 		.confirmText = tr::lng_box_delete(),
 		.confirmStyle = &st::attentionBoxButton,
 	}));

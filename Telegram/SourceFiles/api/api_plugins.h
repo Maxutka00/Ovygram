@@ -7,6 +7,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <map>
+#include <memory>
 #include <optional>
 
 class PeerData;
@@ -19,6 +20,10 @@ class PluginRuntime;
 namespace Main {
 class Session;
 } // namespace Main
+
+namespace Ovygram {
+class PluginUi;
+} // namespace Ovygram
 
 namespace Api {
 
@@ -69,6 +74,7 @@ private:
 	void notifyHookError(const QString &text);
 
 	const not_null<Core::PluginRuntime*> _runtime;
+	std::unique_ptr<Ovygram::PluginUi> _ui;
 	std::map<QString, Pending> _pending;
 	std::map<QString, base::weak_ptr<Main::Session>> _sessions;
 	rpl::lifetime _accountLifetime;

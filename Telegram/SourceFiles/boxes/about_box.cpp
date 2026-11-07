@@ -36,9 +36,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 rpl::producer<TextWithEntities> Text1() {
-	return tr::lng_about_text1(
-		lt_api_link,
-		tr::lng_about_text1_api(tr::url(u"https://core.telegram.org/api"_q)),
+	return tr::lng_ovygram_about_text1(
+		lt_tdesktop_link,
+		rpl::single(tr::link(
+			"Telegram Desktop",
+			"https://github.com/telegramdesktop/tdesktop")),
 		tr::marked);
 }
 
@@ -47,11 +49,11 @@ rpl::producer<TextWithEntities> Text2() {
 		lt_gpl_link,
 		rpl::single(tr::link(
 			"GNU GPL",
-			"https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE")),
+			"https://github.com/Maxutka00/Ovygram/blob/main/LICENSE")),
 		lt_github_link,
 		rpl::single(tr::link(
 			"GitHub",
-			"https://github.com/telegramdesktop/tdesktop")),
+			"https://github.com/Maxutka00/Ovygram")),
 		tr::marked);
 }
 
@@ -65,7 +67,7 @@ rpl::producer<TextWithEntities> Text3() {
 } // namespace
 
 void AboutBox(not_null<Ui::GenericBox*> box) {
-	box->setTitle(u"Telegram Desktop"_q);
+	box->setTitle(u"Ovygram"_q);
 
 	auto layout = box->verticalLayout();
 
@@ -153,7 +155,9 @@ QString telegramFaqLink() {
 namespace {
 
 [[nodiscard]] QString CurrentVersionText(bool withCommit) {
-	auto result = QString::fromLatin1(AppVersionStr);
+	auto result = QString::fromLatin1(OvygramVersionStr)
+		+ '-'
+		+ QString::fromLatin1(AppVersionStr);
 	if (Core::BuildIsCanary) {
 		result += Core::CanaryVersionSuffix();
 	} else if (cAlphaVersion()) {

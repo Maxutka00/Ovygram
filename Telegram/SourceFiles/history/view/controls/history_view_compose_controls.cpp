@@ -141,6 +141,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_iv.h"
 #include "styles/style_layers.h"
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/plugin_elements.h"
+#endif // OVYGRAM_ENABLED
+
 namespace HistoryView {
 namespace {
 
@@ -2842,6 +2846,14 @@ void ComposeControls::init() {
 		_attachToggle->setAccessibleName(tr::lng_attach(tr::now));
 	}
 	_tabbedSelectorToggle->setAccessibleName(tr::lng_emoji_sticker_gif(tr::now));
+#ifdef OVYGRAM_ENABLED
+	Ovygram::RegisterElements({
+		{ "compose.attach", _attachToggle },
+		{ "compose.emoji", _tabbedSelectorToggle.get() },
+		{ "compose.send", _send.get() },
+		{ "compose.field", _field.get() },
+	});
+#endif // OVYGRAM_ENABLED
 
 	initField();
 	initTabbedSelector();
@@ -5252,6 +5264,9 @@ void ComposeControls::updateControlsVisibility() {
 	updateSendAsFileVisibility();
 	updateExpandButtonVisibility();
 	updateDiscardRichDraftVisibility();
+#ifdef OVYGRAM_ENABLED
+	Ovygram::ApplyElementRules(_parent);
+#endif // OVYGRAM_ENABLED
 }
 
 void ComposeControls::updateAiButtonVisibility() {
