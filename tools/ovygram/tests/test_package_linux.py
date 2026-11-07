@@ -39,7 +39,9 @@ class PackageLinuxTests(unittest.TestCase):
             prefix = archive.name.removesuffix(".tar.xz")
             for name in ("Ovygram", "LICENSE", "io.github.maxutka00.Ovygram.desktop",
                          "python/pip.whl", "python/sdk/ovygram_deps.py",
-                         "icons/hicolor/256x256/apps/io.github.maxutka00.Ovygram.png"):
+                         "icons/hicolor/256x256/apps/io.github.maxutka00.Ovygram.png",
+                         "icons/hicolor/symbolic/apps/io.github.maxutka00.Ovygram-symbolic.svg",
+                         "icons/hicolor/symbolic/apps/io.github.maxutka00.Ovygram-mute-symbolic.svg"):
                 self.assertIn(f"{prefix}/{name}", names)
             self.assertFalse(any("__pycache__" in name for name in names))
             self.assertTrue(archive.with_name(archive.name + ".sha256").exists())

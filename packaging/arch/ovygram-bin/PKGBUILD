@@ -7,7 +7,7 @@ pkgrel=1
 pkgdesc='Telegram Desktop fork with Python plugins'
 arch=('x86_64')
 url='https://github.com/Maxutka00/Ovygram'
-license=('GPL-3.0-only WITH OpenSSL-exception')
+license=('GPL-3.0-or-later WITH OpenSSL-exception')
 # From tools/ovygram/arch_depends.py on the build, plus what is loaded at
 # runtime: icons, PipeWire, Qt image formats.
 depends=('abseil-cpp'
@@ -67,7 +67,12 @@ depends=('abseil-cpp'
          'xxhash'
          'xz'
          'zlib')
-optdepends=('geoclue: geoinformation support')
+# As in the Arch telegram-desktop package: loaded or called at runtime.
+optdepends=('geoclue: geoinformation support'
+            'crow-translate: translation provider'
+            'webkit2gtk-4.1: embedded browser features provided by webkit2gtk-4.1 (gtk3)'
+            'webkitgtk-6.0: embedded browser features provided by webkitgtk-6.0 (gtk4)'
+            'xdg-desktop-portal: desktop integration')
 provides=('ovygram')
 conflicts=('ovygram')
 # The binary is stripped by tools/ovygram/package_linux.py; the bundled

@@ -52,6 +52,12 @@ def stage(build, target, strip):
         icon = target / "icons/hicolor" / f"{size}x{size}" / "apps" / f"{APP_ID}.png"
         icon.parent.mkdir(parents=True)
         shutil.copy2(ROOT / "Telegram/Resources/art" / f"icon{size}.png", icon)
+    # The tray asks the icon theme for <app id>[-attention|-mute]-symbolic.
+    symbolic = target / "icons/hicolor/symbolic/apps"
+    symbolic.mkdir(parents=True)
+    for source, suffix in (("", ""), ("_attention", "-attention"), ("_mute", "-mute")):
+        shutil.copy2(ROOT / "Telegram/Resources/icons" / f"tray_monochrome{source}.svg",
+                     symbolic / f"{APP_ID}{suffix}-symbolic.svg")
     shutil.copy2(ROOT / "LICENSE", target / "LICENSE")
 
 
