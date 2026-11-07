@@ -1,0 +1,113 @@
+"""Exchange rates on a plugin page, from a public JSON API.
+
+Shows how to:
+- make HTTP requests with the standard library, off the UI thread;
+- keep a cache on disk, so the page opens instantly and works offline;
+- refresh periodically with a timer the client stops on unload;
+- build a page (ui.Section) and update it in place.
+"""
+
+import json
+import time
+import urllib.request
+
+from base_plugin import BasePlugin
+from desktop import ui
+from desktop_utils import run_in_background, set_timer
+from file_utils import get_plugin_data_dir
+from ui.settings import Input, Selector
+
+__id__ = "desktop.currency_rates"
+__name__ = "Курсы валют"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Страница с курсами валют из главного меню. Данные open.er-api.com, "
+                   "обновление раз в час, кэш на диске.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+BASES = ["USD", "EUR", "RUB", "GBP", "CNY"]
+API = "https://open.er-api.com/v6/latest/{base}"
+REFRESH = 60 * 60
+TIMEOUT = 15
+
+
+def fetch_json(url):
+    """Blocking: call it through run_in_background, never on the UI thread."""
+    request = urllib.request.Request(url, headers={"User-Agent": "Ovygram-plugin-example/1.0"})
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        return json.load(response)
+
+
+class CurrencyRatesPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.section = None
+        self.status = None
+        self.table = None
+        self.cache = get_plugin_data_dir() / "rates.json"
+        ui.add_menu_item("main", "Курсы валют", self.open)
+        # A managed timer: unloading the plugin cancels it.
+        set_timer(REFRESH, lambda: self.run_async(self.refresh()), repeat=True)
+
+    def create_settings(self):
+        return [
+            Selector("base", "Базовая валюта", BASES, 0),
+            Input("symbols", "Валюты через запятую", "EUR, RUB, GBP, CNY, JPY, KZT"),
+        ]
+
+    def base(self):
+        return BASES[self.get_setting("base", 0)]
+
+    def symbols(self):
+        text = self.get_setting("symbols", "EUR, RUB, GBP, CNY, JPY, KZT")
+        return [item.strip().upper() for item in text.split(",") if item.strip()]
+
+    def load_cache(self):
+        try:
+            data = json.loads(self.cache.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return data if data.get("base_code") == self.base() else None
+
+    async def open(self, menu):
+        if self.section is not None and not self.section.closed:
+            self.section.close()
+        self.status = ui.Text("Загрузка…")
+        self.table = ui.Text(self.format(self.load_cache()))
+        self.section = ui.Section(ui.Column(
+            self.status,
+            self.table,
+            ui.Row(ui.Button("Обновить", on_click=lambda: self.run_async(self.refresh()),
+                             width="fit"), ui.Spacer(0, stretch=1)),
+        ), title=f"Курсы валют к {self.base()}").show()
+        await self.refresh()
+
+    async def refresh(self):
+        try:
+            data = await run_in_background(fetch_json, API.format(base=self.base()))
+            if data.get("result") != "success":
+                raise ValueError(data.get("error-type", "неизвестная ошибка API"))
+            self.cache.write_text(json.dumps(data), encoding="utf-8")
+            status = "Обновлено " + time.strftime("%H:%M")
+        except Exception as error:  # Network errors are expected: show, don't crash.
+            data = self.load_cache()
+            status = f"Не удалось обновить ({error}). " + ("Показан кэш." if data else "")
+        self.show(status, data)
+
+    def show(self, status, data):
+        if self.section is None or self.section.closed:
+            return
+        self.section.update(self.status, text=status)
+        self.section.update(self.table, text=self.format(data))
+
+    def format(self, data):
+        if not data:
+            return "Нет данных."
+        rates = data.get("rates", {})
+        lines = [f"1 {data['base_code']} = {rates[symbol]:,.4f} {symbol}".replace(",", " ")
+                 for symbol in self.symbols() if symbol in rates]
+        missing = [symbol for symbol in self.symbols() if symbol not in rates]
+        if missing:
+            lines.append("Нет курса для: " + ", ".join(missing))
+        return "\n".join(lines) or "Нет выбранных валют."

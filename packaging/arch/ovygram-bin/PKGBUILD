@@ -1,0 +1,100 @@
+# Maintainer: bezumnui <bezumnui.mistikgt@gmail.com>
+
+pkgname=ovygram-bin
+_tag=0.1.0-7.3.5
+pkgver=${_tag//-/_}
+pkgrel=1
+pkgdesc='Telegram Desktop fork with Python plugins'
+arch=('x86_64')
+url='https://github.com/Maxutka00/Ovygram'
+license=('GPL-3.0-or-later WITH OpenSSL-exception')
+# From tools/ovygram/arch_depends.py on the build, plus what is loaded at
+# runtime: icons, PipeWire, Qt image formats.
+depends=('abseil-cpp'
+         'ada'
+         'bzip2'
+         'cairo'
+         'ffmpeg'
+         'fontconfig'
+         'gdbm'
+         'glib2'
+         'glibc'
+         'hicolor-icon-theme'
+         'hunspell'
+         'kcoreaddons'
+         'libavif'
+         'libb2'
+         'libffi'
+         'libfido2'
+         'libgcc'
+         'libheif'
+         'libjpeg-turbo'
+         'libjxl'
+         'libpipewire'
+         'libsrtp'
+         'libstdc++'
+         'libvpx'
+         'libx11'
+         'libxcb'
+         'libxcomposite'
+         'libxdamage'
+         'libxext'
+         'libxfixes'
+         'libxkbcommon'
+         'libxrandr'
+         'libxtst'
+         'lz4'
+         'minizip'
+         'mpdecimal'
+         'ncurses'
+         'openal'
+         'openh264'
+         'openssl'
+         'opus'
+         'pango'
+         'pipewire'
+         'qrcodegencpp-cmake'
+         'qt6-base'
+         'qt6-declarative'
+         'qt6-imageformats'
+         'qt6-svg'
+         'qt6-wayland'
+         'readline'
+         'rnnoise'
+         'sqlite'
+         'tlottie'
+         'util-linux-libs'
+         'xxhash'
+         'xz'
+         'zlib')
+# As in the Arch telegram-desktop package: loaded or called at runtime.
+optdepends=('geoclue: geoinformation support'
+            'crow-translate: translation provider'
+            'webkit2gtk-4.1: embedded browser features provided by webkit2gtk-4.1 (gtk3)'
+            'webkitgtk-6.0: embedded browser features provided by webkitgtk-6.0 (gtk4)'
+            'xdg-desktop-portal: desktop integration')
+provides=('ovygram')
+conflicts=('ovygram')
+# The binary is stripped by tools/ovygram/package_linux.py; the bundled
+# Python must stay as built.
+options=('!strip' '!debug')
+source=("https://github.com/Maxutka00/Ovygram/releases/download/v${_tag}/ovygram-${_tag}-linux-x86_64.tar.xz")
+# Replace with the .sha256 published next to the release archive
+# (or run updpkgsums) before building or uploading to the AUR.
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+
+package() {
+  cd "ovygram-${_tag}-linux-x86_64"
+
+  # The plugin runtime looks for python/ next to the binary, so both live
+  # in /opt; /usr/bin gets a link (the binary resolves its real path).
+  install -d "$pkgdir/opt/ovygram" "$pkgdir/usr/bin"
+  cp -a Ovygram python "$pkgdir/opt/ovygram/"
+  ln -s /opt/ovygram/Ovygram "$pkgdir/usr/bin/ovygram"
+
+  install -Dm644 io.github.maxutka00.Ovygram.desktop \
+    "$pkgdir/usr/share/applications/io.github.maxutka00.Ovygram.desktop"
+  install -d "$pkgdir/usr/share/icons"
+  cp -a icons/hicolor "$pkgdir/usr/share/icons/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

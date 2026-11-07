@@ -1,0 +1,107 @@
+"""The /weather command: current weather from Open-Meteo, sent into the chat.
+
+Shows how to:
+- use a PyPI library (requests) declared in __requirements__;
+- turn an outgoing message into a command: the hook cancels sending and
+  starts a background task, because hooks are synchronous and must be fast;
+- find the chat of an outgoing request and answer in it;
+- keep network code off the UI thread and report errors to the user.
+"""
+
+import requests
+
+from base_plugin import BasePlugin
+from desktop import client, ui
+from desktop_utils import run_in_background
+from hook_utils import CANCEL, HookResult
+
+__id__ = "desktop.weather"
+__name__ = "Погода"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Команда «/погода Город» (или /weather) отправляет в чат текущую погоду "
+                   "по данным Open-Meteo. Пример плагина с библиотекой requests.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = ["requests>=2.31,<3"]
+
+COMMANDS = ("/погода", "/weather")
+GEOCODING = "https://geocoding-api.open-meteo.com/v1/search"
+FORECAST = "https://api.open-meteo.com/v1/forecast"
+TIMEOUT = 15
+# WMO weather codes, https://open-meteo.com/en/docs
+CODES = {0: "ясно ☀️", 1: "в основном ясно 🌤", 2: "переменная облачность ⛅", 3: "пасмурно ☁️",
+         45: "туман 🌫", 48: "изморозь 🌫", 51: "морось 🌦", 53: "морось 🌦", 55: "сильная морось 🌧",
+         61: "небольшой дождь 🌦", 63: "дождь 🌧", 65: "ливень 🌧", 71: "небольшой снег 🌨",
+         73: "снег 🌨", 75: "сильный снег ❄️", 80: "ливневый дождь 🌧", 95: "гроза ⛈"}
+
+def degrees(value):
+    # round() first: "{:+.0f}" would print -0.3 as "-0".
+    return f"{round(value):+d} °C"
+
+
+session = requests.Session()
+session.headers["User-Agent"] = "Ovygram-plugin-example/1.0"
+
+
+def weather(city):
+    """Blocking network code, run through run_in_background."""
+    places = session.get(GEOCODING, params={"name": city, "count": 1, "language": "ru"},
+                         timeout=TIMEOUT).json().get("results")
+    if not places:
+        return f"Город «{city}» не найден."
+    place = places[0]
+    current = session.get(FORECAST, params={
+        "latitude": place["latitude"], "longitude": place["longitude"], "timezone": "auto",
+        "current": "temperature_2m,apparent_temperature,wind_speed_10m,weather_code",
+        "wind_speed_unit": "ms",
+    }, timeout=TIMEOUT).json()["current"]
+    where = ", ".join(item for item in (place["name"], place.get("country")) if item)
+    sky = CODES.get(current["weather_code"], "")
+    return (f"{where}: {degrees(current['temperature_2m'])}, ощущается как "
+            f"{degrees(current['apparent_temperature'])}, {sky}, ветер "
+            f"{current['wind_speed_10m']:.0f} м/с")
+
+
+async def chat_of(account_id, peer):
+    """The Chat an outgoing request goes to, from its InputPeer."""
+    kind = peer.constructor_name
+    if kind == "inputPeerSelf":
+        accounts = await client.accounts()
+        chat_id = next(account.user_id for account in accounts if account.id == account_id)
+    elif kind == "inputPeerUser":
+        chat_id = peer.user_id
+    elif kind == "inputPeerChat":
+        chat_id = peer.chat_id | (1 << 48)
+    elif kind == "inputPeerChannel":
+        chat_id = peer.channel_id | (2 << 48)
+    else:
+        raise ValueError(f"Неподдерживаемый чат {kind}.")
+    return await client.get_chat(account_id, chat_id)
+
+
+class WeatherPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.add_hook("before_send", self.before_send, request="messages.sendMessage")
+
+    def before_send(self, message):
+        command, _, city = message.text.partition(" ")
+        if command.lower() not in COMMANDS:
+            return HookResult()  # Not ours: leave the message as is.
+        city = city.strip()
+        if not city:
+            return HookResult(CANCEL, reason="Укажите город: /погода Москва")
+        # The hook only starts the work; the reason is shown to the user.
+        self.run_async(self.answer(message.account_id, message.request.peer, city))
+        return HookResult(CANCEL, reason=f"Узнаю погоду: {city}…")
+
+    async def answer(self, account_id, peer, city):
+        try:
+            text = await run_in_background(weather, city)
+        except requests.RequestException as error:
+            text = f"Не удалось получить погоду: {error}"
+        try:
+            await client.send_message(await chat_of(account_id, peer), text)
+        except Exception as error:
+            self.log(f"Погода не отправлена: {error}")
+            ui.show_dialog(text, title="Погода")

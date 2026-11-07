@@ -712,6 +712,7 @@ QString ExecutablePathForShortcuts() {
 } // namespace Platform
 
 QString psAppDataPath() {
+#ifndef OVYGRAM_ENABLED // ~/.TelegramDesktop holds official Telegram data.
 	// Previously we used ~/.TelegramDesktop, so look there first.
 	// If we find data there, we should still use it.
 	auto home = QDir::homePath();
@@ -724,6 +725,7 @@ QString psAppDataPath() {
 			return oldPath;
 		}
 	}
+#endif // !OVYGRAM_ENABLED
 
 	return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + '/';
 }
@@ -768,7 +770,13 @@ void start() {
 				Core::Launcher::Instance().instanceHash().constData());
 		}
 
+#ifdef OVYGRAM_ENABLED
+		// Its own ID, also the D-Bus name and the .desktop file name: with
+		// Telegram's, starting Ovygram would activate a running Telegram.
+		return u"io.github.maxutka00.Ovygram"_q;
+#else // OVYGRAM_ENABLED
 		return u"org.telegram.desktop"_q;
+#endif // OVYGRAM_ENABLED
 	}());
 
 	LOG(("App ID: %1").arg(QGuiApplication::desktopFileName()));
