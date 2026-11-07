@@ -1,0 +1,72 @@
+"""Removes tracking parameters (utm_*, fbclid, si…) from links you send.
+
+Shows how to write a before_send hook well:
+- it is synchronous and runs on the UI thread, so it only does fast,
+  local work: no network, no files;
+- it returns DEFAULT when it changes nothing, so formatting (entities) of
+  ordinary messages is kept: setting message.text resets entities;
+- it works for text messages and media captions alike.
+"""
+
+import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from base_plugin import BasePlugin
+from hook_utils import MODIFY, HookResult
+from ui.settings import Switch
+
+__id__ = "desktop.clean_links"
+__name__ = "Чистые ссылки"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Убирает из отправляемых ссылок метки отслеживания: utm_*, fbclid, gclid, "
+                   "si, igshid и другие.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+URL = re.compile(r"https?://[^\s<>\"']+")
+TRACKING = {"fbclid", "gclid", "dclid", "msclkid", "yclid", "igshid", "si", "mc_cid", "mc_eid",
+            "_hsenc", "_hsmi", "ref_src", "spm"}
+
+
+def is_tracking(name):
+    name = name.lower()
+    return name.startswith("utm_") or name in TRACKING
+
+
+def clean_url(url):
+    trailing = ""
+    while url and url[-1] in ".,;:!?)":  # Punctuation after a link in a sentence.
+        trailing = url[-1] + trailing
+        url = url[:-1]
+    parts = urlsplit(url)
+    if not parts.query:
+        return url + trailing
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+             if not is_tracking(key)]
+    return urlunsplit(parts._replace(query=urlencode(query, doseq=True))) + trailing
+
+
+def clean_text(text):
+    return URL.sub(lambda match: clean_url(match.group(0)), text)
+
+
+class CleanLinksPlugin(BasePlugin):
+    def on_plugin_load(self):
+        # Without request= the hook sees media and albums too; text is None
+        # for an album, whose captions are in request.multi_media.
+        self.add_hook("before_send", self.before_send)
+
+    def create_settings(self):
+        return [Switch("enabled", "Очищать ссылки", True)]
+
+    def before_send(self, message):
+        text = message.text
+        if not text or "http" not in text or not self.get_setting("enabled", True):
+            return HookResult()
+        cleaned = clean_text(text)
+        if cleaned == text:
+            return HookResult()  # Unchanged: keep the message and its formatting.
+        message.text = cleaned
+        return HookResult(MODIFY, message)

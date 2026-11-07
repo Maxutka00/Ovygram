@@ -1,0 +1,82 @@
+"""«Что это?» in a message's menu: a short Wikipedia summary of its text.
+
+Shows how to:
+- add a context menu item that works with the clicked message;
+- make an async menu callback: the client runs it as a managed task;
+- call a REST API with the standard library and escape user text in URLs;
+- show the result in a dialog with actions.
+"""
+
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from base_plugin import BasePlugin
+from desktop import ui
+from desktop_utils import run_in_background
+from ui.settings import Selector
+
+__id__ = "desktop.wiki_summary"
+__name__ = "Что это? (Википедия)"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = "Пункт «Что это?» в меню сообщения показывает краткую справку из Википедии."
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+LANGUAGES = ["ru", "en", "uk", "de"]
+TIMEOUT = 10
+MAX_QUERY = 100
+
+
+def summary(language, query):
+    title = urllib.parse.quote(query.replace(" ", "_"), safe="")
+    url = f"https://{language}.wikipedia.org/api/rest_v1/page/summary/{title}?redirect=true"
+    request = urllib.request.Request(url, headers={"User-Agent": "Ovygram-plugin-example/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
+
+
+class WikiSummaryPlugin(BasePlugin):
+    def on_plugin_load(self):
+        ui.add_menu_item("message", "Что это? (Википедия)", self.explain)
+
+    def create_settings(self):
+        return [Selector("language", "Язык Википедии", LANGUAGES, 0)]
+
+    async def explain(self, menu):
+        query = " ".join(menu.message.text.split())[:MAX_QUERY]
+        if not query:
+            ui.show_dialog("В сообщении нет текста.", title="Википедия")
+            return
+        language = LANGUAGES[self.get_setting("language", 0)]
+        try:
+            page = await run_in_background(summary, language, query)
+        except Exception as error:
+            ui.show_dialog(f"Не удалось получить справку: {error}", title="Википедия")
+            return
+        if not page or page.get("type") == "disambiguation" or not page.get("extract"):
+            ui.show_dialog(f"Статья «{query}» не найдена или неоднозначна.", title="Википедия")
+            return
+        link = page.get("content_urls", {}).get("desktop", {}).get("page", "")
+        dialog = None
+
+        def insert():
+            ui.insert_compose_text(f"{page['extract']} {link}".strip())
+            dialog.close()
+
+        dialog = ui.show_dialog(ui.Column(
+            ui.Text(page["extract"]),
+            ui.Text(link),
+            ui.Row(ui.Button("Вставить в поле ввода", on_click=insert, width="fit"),
+                   ui.Button("Скопировать ссылку", on_click=lambda: ui.set_clipboard(link),
+                             width="fit"),
+                   ui.Spacer(0, stretch=1)),
+        ), title=page.get("title", query), width=480)

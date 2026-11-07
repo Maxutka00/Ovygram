@@ -175,8 +175,6 @@ __requirements__ = ["requests>=2.31,<3"]
 ## Примеры
 
 В [`tools/ovygram/examples`](../tools/ovygram/examples) лежат рабочие
-плагины: жизненный цикл и настройки (`lifecycle`), события (`account_events`),
-хуки (`text_hooks`, `rpc_hooks`), файлы (`media_transfer`), интерфейс
-(`ui_widgets`, `chat_bar`, `section`, `menus`, `top_bar`, `chat_style`,
-`highlight`, `math_autocomplete`, `widget_inspector`), Qt (`native_events`)
-и зависимости (`qr_code`).
+плагины — от курсов валют, погоды и RSS до статистики чата и напоминаний.
+[Список с описанием](../tools/ovygram/examples/README.md) показывает, какой
+приём демонстрирует каждый, и правила, которым они следуют.
