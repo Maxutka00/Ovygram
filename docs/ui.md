@@ -1,0 +1,215 @@
+# Интерфейс плагинов: `desktop.ui`
+
+Модуль `desktop.ui` даёт плагину собственные окна и страницы, пункты меню и
+доступ к интерфейсу Telegram. Нужен `__desktop_sdk__ = 2`.
+
+Все функции можно вызывать из любого потока: из `on_plugin_load`, хука или
+фоновой задачи. Вызов только ставит команду в очередь, клиент выполняет её в
+главном потоке. Обработчики событий интерфейса всегда вызываются в главном
+потоке; обработчик может быть coroutine-функцией, тогда он запускается как
+управляемая задача плагина.
+
+Всё, что плагин создал или изменил, принадлежит ему и снимается при
+выгрузке: окна закрываются, правила и декорации удаляются, цвета и скрытые
+элементы возвращаются.
+
+## Элементы
+
+Содержимое окна — дерево элементов.
+
+| Элемент | Назначение |
+| --- | --- |
+| `Column(*children)` | Элементы друг под другом |
+| `Row(*children, align="center", spacing=8)` | Элементы в строку; `align` — `top`, `center`, `bottom` |
+| `Text(text, align="left")` | Текст; `align` — `left`, `center`, `right` |
+| `Button(text, on_click=None)` | Кнопка, `on_click()` |
+| `Input(text="", placeholder="", on_change=None)` | Поле ввода, `on_change(text)` |
+| `Switch(text, value=False, on_toggle=None)` | Переключатель, `on_toggle(value)` |
+| `Image(path, height=0)` | Картинка из файла |
+| `Spacer(height)` | Отступ |
+| `Canvas(height, commands=(), on_click=None)` | Собственная отрисовка, `on_click(x, y)` |
+
+У любого элемента внутри `Row` есть `width` (пиксели или `"fit"` — по
+содержимому) и `stretch` (доля свободного места, по умолчанию 1).
+
+```python
+ui.Row(
+    ui.Spacer(0, stretch=1),
+    ui.Text("По центру", width="fit"),
+    ui.Spacer(0, stretch=1),
+)
+```
+
+### Отрисовка
+
+Команды для `Canvas`, декораций чатов и сообщений:
+
+| Команда | Что рисует |
+| --- | --- |
+| `fill_rect(x, y, width, height, color, radius=0)` | Прямоугольник |
+| `line(x1, y1, x2, y2, color, width=1)` | Линию |
+| `ellipse(x, y, width, height, color)` | Эллипс |
+| `text(x, y, value, color, size=13)` | Текст, `y` — базовая линия |
+
+Цвет — `#rrggbb` или `#aarrggbb`. Отрицательные `x` и `y` отсчитываются от
+правого и нижнего края: `fill_rect(-28, 8, 20, 20, ...)` — квадрат у правого
+края. У холста до 2000 команд, у декорации до 64.
+
+## Поверхности
+
+| Класс | Где показывается |
+| --- | --- |
+| `Dialog(content, title="", width=0)`, `show_dialog(...)` | Окно поверх Telegram |
+| `Window(content, title="", width=420, height=480)` | Отдельное окно, содержимое прокручивается |
+| `Section(content, title="")` | Страница в основной колонке вместо чата |
+| `ChatBar(chat, content)` | Полоса над сообщениями одного чата |
+| `Overlay(widget, canvas)` | Холст поверх любого виджета Telegram |
+
+У всех есть `on_close` и методы:
+
+- `show()` — показать, возвращает саму поверхность;
+- `update(node, **props)` — изменить `text` у `Text`, `Button`, `Input`,
+  `value` у `Switch`, `commands` у `Canvas`;
+- `draw(canvas, commands)` — перерисовать холст;
+- `close()` — закрыть. После закрытия `update()` бросает `ObjectDestroyed`.
+
+Изменения, сделанные через `update()`, не возвращаются в `on_change` и
+`on_toggle`, поэтому обработчик может менять своё же поле без зацикливания.
+
+```python
+class CounterPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.count = 0
+        self.label = ui.Text("Нажатий: 0")
+        self.window = ui.Window(ui.Column(
+            self.label,
+            ui.Button("Нажать", on_click=self.on_click),
+        ), title="Счётчик").show()
+
+    def on_click(self):
+        self.count += 1
+        self.window.update(self.label, text=f"Нажатий: {self.count}")
+```
+
+**Section** открывается в активном окне и участвует в истории переходов:
+пользователь может открыть чат и вернуться кнопкой «Назад». Раздел
+закрывается вызовом `close()`, при выгрузке плагина или когда история окна
+его отбрасывает (например, при переходе к чату из списка); тогда вызывается
+`on_close`.
+
+**ChatBar** виден, пока этот чат открыт в окне, и остаётся до `close()`,
+даже если пользователь уходит в другие чаты.
+
+**Overlay** следует за размером виджета. Без `on_click` у холста клики
+проходят сквозь него.
+
+## Меню
+
+```python
+ui.add_menu_item("message", "Скопировать текст",
+                 lambda menu: ui.set_clipboard(menu.message.text))
+```
+
+`add_menu_item(menu, text, callback, kinds=None)` добавляет пункт после
+пунктов Telegram:
+
+| `menu` | Меню |
+| --- | --- |
+| `"main"` | Боковое главное меню |
+| `"chat"` | «⋮» в верхней панели чата и контекстное меню чата в списке |
+| `"message"` | Контекстное меню сообщения |
+
+`callback(menu)` получает `MenuContext` с полями `account_id`, `chat`
+(`Chat`) и `message` (`Message`); для главного меню `chat` и `message` —
+`None`. `kinds` ограничивает пункты чатов и сообщений типами чатов: `user`,
+`chat` (обычная группа), `channel` (каналы и супергруппы). Пункт появляется
+при следующем открытии меню. Результат имеет `remove()`.
+
+## Элементы Telegram
+
+Встроенные кнопки с постоянными именами (`ui.ELEMENTS`):
+
+| Имя | Элемент |
+| --- | --- |
+| `chat.top_bar.call`, `.search`, `.info`, `.menu` | Кнопки верхней панели чата |
+| `compose.attach`, `compose.emoji`, `compose.send`, `compose.field` | Строка ввода |
+
+```python
+ui.element("chat.top_bar.call").hide()
+ui.element("chat.top_bar.search").on_click(self.on_search, replace=True)
+```
+
+`hide()` / `show()` — скрытая кнопка не оставляет пустого места (кроме
+`compose.attach`, под которую Telegram резервирует ширину).
+`on_click(callback, replace=False)` — обработчик нажатия; с `replace=True`
+Telegram нажатие не получает. `off_click()` снимает обработчик.
+
+## Любой виджет через Qt
+
+- `await widget_tree(depth=8, root=None)` — дерево виджетов активного окна:
+  `handle`, `cls` (класс C++), `visible`, `geometry`, а также `name`,
+  `accessible`, `element` и `children`, если есть. Пример
+  `widget_inspector` показывает его по Ctrl+Shift+I.
+- `await get_property(widget, name)`, `set_property(widget, name, value)` —
+  свойства Qt. Telegram может перезаписать значение при следующей раскладке.
+- `hide_widgets(**selector)` — скрывает подходящие виджеты сейчас и при
+  каждом показе; родитель не перераскладывается.
+- `on_widget_click(callback, replace=False, **selector)` — нажатия.
+- `on_key(sequence, callback, replace=False, element=None)` — сочетание
+  вроде `"Ctrl+Alt+K"`; с `replace=True` выигрывает у сочетаний Telegram, с
+  `element` работает только при фокусе в этом элементе.
+
+Селектор: `cls`, `ancestor` (класс любого родителя), `name` (objectName),
+`accessible` (зависит от языка интерфейса), `element`, `index` (номер среди
+подходящих соседей). Нужен хотя бы один из `cls`, `name`, `accessible`,
+`element`. Правило действует и на виджеты, созданные позже.
+
+## Строка ввода
+
+| Функция | Что делает |
+| --- | --- |
+| `await compose_text()` | Текст поля или `None` |
+| `await compose_state()` | `{text, cursor, selection_start, selection_end}` |
+| `set_compose_text(text)` | Заменить текст |
+| `insert_compose_text(text)` | Вставить у курсора |
+| `replace_compose_text(start, end, text, select=False)` | Заменить диапазон, `select` выделяет вставку |
+| `on_compose_change(callback)` | `callback(state)` при правке пользователем |
+
+Позиции — индексы Python-строки `state["text"]`, эмодзи считается одним
+символом. Правки, сделанные этими функциями, в `on_compose_change` не
+приходят. Пример `math_autocomplete` подсказывает результат выражения.
+
+## Список чатов и сообщения
+
+- `decorate_chat(chat, commands=(), background=None, account=None)` —
+  рисование поверх строки чата; `chat="*"` с `account` — все чаты аккаунта.
+- `hide_chats([chat, ...])` — скрыть чаты из списка и папок. Поиск их
+  находит, закрепление сохраняется.
+- `decorate_message(message, commands=(), background=None)` — рисование
+  поверх пузыря сообщения.
+
+Всё рисуется поверх строки или пузыря, поэтому `background` должен быть
+полупрозрачным (`#22ff9800`): непрозрачный цвет закрывает текст. У
+декораций есть `update(commands, background)` и `remove()`.
+
+## Прочее
+
+- `set_colors({"windowBg": "#101820"})` / `reset_colors()` — цвета темы на
+  лету; неизвестное имя отменяет весь вызов.
+- `set_clipboard(text)` — буфер обмена.
+
+## Примеры
+
+| Пример | Что показывает |
+| --- | --- |
+| [`ui_widgets`](../tools/ovygram/examples/ui_widgets.plugin) | Окно, холст, диалог |
+| [`chat_bar`](../tools/ovygram/examples/chat_bar.plugin) | Полоса в чате |
+| [`section`](../tools/ovygram/examples/section.plugin) | Страница плагина из главного меню |
+| [`menus`](../tools/ovygram/examples/menus.plugin) | Пункты в трёх меню |
+| [`top_bar`](../tools/ovygram/examples/top_bar.plugin) | Скрытие и перехват кнопок, цвета |
+| [`widget_inspector`](../tools/ovygram/examples/widget_inspector.plugin) | Дерево виджетов, Ctrl+Shift+I |
+| [`chat_style`](../tools/ovygram/examples/chat_style.plugin) | Декорация чатов, Ctrl+Alt+U |
+| [`highlight`](../tools/ovygram/examples/highlight.plugin) | Декорация сообщений, скрытие чата, Ctrl+Alt+H |
+| [`math_autocomplete`](../tools/ovygram/examples/math_autocomplete.plugin) | Работа со строкой ввода |
+
+Проверка в клиенте — по [чек-листу](ui-checklist.md).
