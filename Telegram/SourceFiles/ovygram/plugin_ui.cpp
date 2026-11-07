@@ -6,6 +6,7 @@
 #include "ovygram/message_decorations.h"
 #include "ovygram/plugin_elements.h"
 #include "ovygram/plugin_menus.h"
+#include "ovygram/plugin_native.h"
 #include "ovygram/plugin_paint.h"
 #include "ovygram/plugin_section.h"
 #include "ovygram/plugin_widgets.h"
@@ -348,6 +349,7 @@ PluginUi::PluginUi(EventSender send)
 	Elements::SetEventSender(_send);
 	Widgets::SetEventSender(_send);
 	Menus::SetEventSender(_send);
+	Native::SetEventSender(_send);
 }
 
 PluginUi *PluginUi::Instance() {
@@ -360,6 +362,7 @@ PluginUi::~PluginUi() {
 		Elements::SetEventSender(nullptr);
 		Widgets::SetEventSender(nullptr);
 		Menus::SetEventSender(nullptr);
+		Native::SetEventSender(nullptr);
 	}
 	// Surfaces report their destruction to destroyed(), which erases from
 	// _objects. Disconnect them first, so destroying _objects can't reenter.
@@ -402,8 +405,11 @@ void PluginUi::handle(const QJsonObject &command) {
 		ChatListFilter::RemovePlugin(command.value(u"plugin_id"_q).toString());
 		MessageDecorations::RemovePlugin(command.value(u"plugin_id"_q).toString());
 		Menus::RemovePlugin(command.value(u"plugin_id"_q).toString());
+		Native::RemovePlugin(command.value(u"plugin_id"_q).toString());
 	} else if (method.startsWith(u"ui.menu."_q)) {
 		Menus::Handle(command);
+	} else if (method.startsWith(u"ui.native."_q)) {
+		Native::Handle(command);
 	} else if (method.startsWith(u"ui.message_decoration."_q)) {
 		MessageDecorations::Handle(command);
 	} else if (method.startsWith(u"ui.chat_list."_q)) {

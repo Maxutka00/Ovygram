@@ -164,6 +164,25 @@ Telegram нажатие не получает. `off_click()` снимает об
 подходящих соседей). Нужен хотя бы один из `cls`, `name`, `accessible`,
 `element`. Правило действует и на виджеты, созданные позже.
 
+### Сигналы и слоты: `desktop.native`
+
+Для того, чего нет в `desktop.ui`, — низкоуровневый доступ к Qt-объектам:
+
+- `native.on_window(callback)` — `callback(event)` при показе и скрытии
+  окон, диалогов и всплывающих меню; `event` — словарь с `event`
+  (`shown`/`hidden`), `handle`, `cls`, `kind` (`window`, `dialog`, `popup`,
+  `other`) и `title`;
+- `native.connect(widget, signal, callback)` — `callback(*args)` при каждом
+  сигнале, например `"windowTitleChanged"`; соединение живёт до `remove()`,
+  уничтожения виджета или выгрузки;
+- `await native.methods(widget)` — сигналы, слоты и методы виджета;
+- `await native.invoke(widget, name, *args)` — вызов слота или
+  invokable-метода, возвращает результат.
+
+Имена здесь — внутренние имена Telegram и Qt, они меняются между версиями.
+Вызов произвольных методов может сломать клиент, как и любой код плагина.
+Пример `native_events` пишет в журнал открытие окон и меню.
+
 ## Строка ввода
 
 | Функция | Что делает |
@@ -211,5 +230,7 @@ Telegram нажатие не получает. `off_click()` снимает об
 | [`chat_style`](../tools/ovygram/examples/chat_style.plugin) | Декорация чатов, Ctrl+Alt+U |
 | [`highlight`](../tools/ovygram/examples/highlight.plugin) | Декорация сообщений, скрытие чата, Ctrl+Alt+H |
 | [`math_autocomplete`](../tools/ovygram/examples/math_autocomplete.plugin) | Работа со строкой ввода |
+| [`native_events`](../tools/ovygram/examples/native_events.plugin) | События окон и сигналы Qt, Ctrl+Alt+N |
 
-Проверка в клиенте — по [чек-листу](ui-checklist.md).
+Все точки перехвата собраны в [справочнике](hooks.md). Проверка в клиенте —
+по [чек-листу](ui-checklist.md).

@@ -1,0 +1,40 @@
+from base_plugin import BasePlugin
+from desktop import native, ui
+
+__id__ = "desktop.native_events"
+__name__ = "События Qt"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Пишет в журнал открытие окон и меню и смену заголовка окна "
+                   "(в нём счётчик непрочитанных); Ctrl+Alt+N показывает слоты окна.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class NativeEventsPlugin(BasePlugin):
+    def on_plugin_load(self):
+        native.on_window(self.on_window)
+        ui.on_key("Ctrl+Alt+N", self.show_slots, replace=True)
+        self.run_async(self.watch_title())
+
+    def on_window(self, event):
+        if event["kind"] in ("dialog", "popup", "window"):
+            self.log(f"{event['event']}: {event['kind']} {event['cls']} {event['title']!r}")
+
+    async def watch_title(self):
+        window = await ui.widget_tree(depth=0)
+        if window is not None:
+            native.connect(window, "windowTitleChanged",
+                           lambda title: self.log(f"Заголовок окна: {title}"))
+
+    async def show_slots(self):
+        window = await ui.widget_tree(depth=0)
+        if window is None:
+            return
+        slots = [item["signature"] for item in await native.methods(window)
+                 if item["type"] == "slot"]
+        ui.show_dialog(ui.Column(
+            ui.Text(f"{window['cls']}: {len(slots)} слотов"),
+            *(ui.Text(signature) for signature in slots[:40]),
+        ), title="Слоты окна")

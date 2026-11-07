@@ -104,3 +104,11 @@ moves between section widgets as the user navigates. The memento's
 the section, and the surface is closed when the history drops the last
 memento. If upstream changes the pure virtuals of these classes or of
 `Media::Player::FloatSectionDelegate`, update the subclasses.
+
+## Qt signals and window events
+
+`desktop.native` (`ovygram/plugin_native.cpp`) needs no upstream change: an
+application event filter reports top-level windows, and a relay object
+connected to a slot index it doesn't declare receives any Qt signal. It
+depends only on Qt's meta-object system and on the names in Telegram's own
+classes, which plugins use at their own risk.

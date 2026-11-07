@@ -427,6 +427,45 @@ class DesktopUiTests(unittest.TestCase):
         menus = [item for item in self.commands_list() if item["method"] == "ui.menu.add"]
         self.assertEqual([item["menu"] for item in menus], ["main"])
 
+    def test_native_window_events_and_signals(self):
+        from desktop import native
+        windows, titles = [], []
+        watch = self.as_plugin("plugin.a", lambda: native.on_window(windows.append))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["enabled"]), ("ui.native.windows", True))
+        event = {"event": "shown", "handle": "5", "cls": "Ui::PopupMenu", "kind": "popup", "title": ""}
+        self.event(plugin_id="plugin.a", type="native_window", rule_id=command["rule_id"], value=event)
+        self.assertEqual(windows, [event])
+        connection = self.as_plugin("plugin.a", lambda: native.connect(
+            {"handle": "7"}, "windowTitleChanged", titles.append))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["handle"], command["signal"]),
+                         ("ui.native.connect", "7", "windowTitleChanged"))
+        self.event(plugin_id="plugin.a", type="native_signal", rule_id=command["rule_id"],
+                   value=["Telegram (3)"])
+        self.assertEqual(titles, ["Telegram (3)"])
+        self.as_plugin("plugin.a", watch.remove)
+        self.as_plugin("plugin.a", connection.remove)
+        self.assertEqual([item["method"] for item in self.commands_list()],
+                         ["ui.native.disconnect", "ui.native.disconnect"])
+
+    def test_native_invoke_sends_a_request(self):
+        from desktop import native
+        future = self.runtime.schedule(self.owners["plugin.a"],
+                                       native.invoke("12", "setWindowTitle", "x"))
+        request = self.wait_for("native.invoke")[0]
+        self.assertEqual((request["handle"], request["name"], request["args"]),
+                         ("12", "setWindowTitle", ["x"]))
+        self.runtime.complete({"id": request["id"], "result": None})
+        self.assertIsNone(future.result(timeout=2))
+
+    def test_native_example_watches_windows(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/native_events.plugin"))
+        self.manager.enable(plugin_id)
+        methods = {item["method"] for item in self.commands_list()}
+        self.assertTrue({"ui.native.windows", "ui.keys.add"} <= methods)
+        self.manager.disable(plugin_id)
+
     def load_math(self):
         plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/math_autocomplete.plugin"))
         self.manager.enable(plugin_id)
