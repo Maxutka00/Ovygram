@@ -1,0 +1,37 @@
+from base_plugin import BasePlugin
+from desktop import client, ui
+
+__id__ = "desktop.menus"
+__name__ = "Пункты меню"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Добавляет пункты в главное меню, меню чата и меню сообщения: "
+                   "сводка, копирование ID чата, текста сообщения и цитата в поле ввода.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class MenusPlugin(BasePlugin):
+    def on_plugin_load(self):
+        ui.add_menu_item("main", "Аккаунты Ovygram", self.on_accounts)
+        ui.add_menu_item("chat", "Скопировать ID чата", self.on_copy_chat_id)
+        ui.add_menu_item("message", "Скопировать текст", self.on_copy_text)
+        ui.add_menu_item("message", "Цитировать в поле ввода", self.on_quote,
+                         kinds=["user", "chat", "channel"])
+
+    async def on_accounts(self, menu):
+        # A coroutine callback: the client API is asynchronous.
+        lines = [f"{'● ' if account.active else '○ '}{account.name}"
+                 for account in await client.accounts()]
+        ui.show_dialog(ui.Column(*(ui.Text(line) for line in lines)), title="Аккаунты")
+
+    def on_copy_chat_id(self, menu):
+        ui.set_clipboard(str(menu.chat.id))
+
+    def on_copy_text(self, menu):
+        ui.set_clipboard(menu.message.text)
+
+    def on_quote(self, menu):
+        if menu.message.text:
+            ui.insert_compose_text("«" + menu.message.text.strip() + "» ")

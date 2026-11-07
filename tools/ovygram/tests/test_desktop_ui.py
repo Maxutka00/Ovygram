@@ -363,6 +363,50 @@ class DesktopUiTests(unittest.TestCase):
         self.assertEqual(self.commands_list()[-1]["method"], "ui.decoration.set")
         self.assertNotIn(plugin_id, self.manager.errors)
 
+    def test_menu_item_click_gets_chat_and_message(self):
+        clicks = []
+        item = self.as_plugin("plugin.a", lambda: ui.add_menu_item(
+            "message", "Скопировать", clicks.append, kinds=["user", "chat"]))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["menu"], command["text"], command["kinds"]),
+                         ("ui.menu.add", "message", "Скопировать", ["user", "chat"]))
+        self.event(plugin_id="plugin.a", type="menu_click", rule_id=command["rule_id"], value={
+            "account_id": "42", "chat": self.native_chat(),
+            "message": {"account_id": "42", "id": "9", "chat_id": "777", "text": "привет",
+                        "date": 0, "outgoing": False}})
+        self.assertEqual(len(clicks), 1)
+        menu = clicks[0]
+        self.assertEqual((menu.account_id, menu.chat.id, menu.message.id, menu.message.text),
+                         ("42", 777, 9, "привет"))
+        self.as_plugin("plugin.a", item.remove)
+        self.assertEqual([item["method"] for item in self.commands_list()], ["ui.menu.remove"])
+        self.event(plugin_id="plugin.a", type="menu_click", rule_id=command["rule_id"],
+                   value={"account_id": "42"})
+        self.assertEqual(len(clicks), 1)
+
+    def test_main_menu_item_and_validation(self):
+        clicks = []
+        self.as_plugin("plugin.a", lambda: ui.add_menu_item("main", "Сводка", clicks.append))
+        command = self.commands_list()[-1]
+        self.event(plugin_id="plugin.a", type="menu_click", rule_id=command["rule_id"],
+                   value={"account_id": "42"})
+        self.assertEqual((clicks[0].account_id, clicks[0].chat, clicks[0].message), ("42", None, None))
+        for arguments in (("sidebar", "x"), ("main", ""), ("main", "x" * 65)):
+            with self.assertRaises(ValueError):
+                self.as_plugin("plugin.a", lambda: ui.add_menu_item(*arguments, print))
+        with self.assertRaises(ValueError):
+            self.as_plugin("plugin.a", lambda: ui.add_menu_item("main", "x", print, kinds=["user"]))
+        with self.assertRaises(ValueError):
+            self.as_plugin("plugin.a", lambda: ui.add_menu_item("chat", "x", print, kinds=["bot"]))
+
+    def test_menus_example_registers_its_items(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/menus.plugin"))
+        self.manager.enable(plugin_id)
+        menus = [item["menu"] for item in self.commands_list() if item["method"] == "ui.menu.add"]
+        self.assertEqual(menus, ["main", "chat", "message", "message"])
+        self.manager.disable(plugin_id)
+        self.assertIn("ui.close_plugin", [item["method"] for item in self.commands_list()])
+
     def load_math(self):
         plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/math_autocomplete.plugin"))
         self.manager.enable(plugin_id)

@@ -351,7 +351,7 @@ class Runtime:
         if event.get("type") == "element_click":
             self.element_click(event)
             return
-        if event.get("type") in ("widget_click", "key", "compose_changed"):
+        if event.get("type") in ("widget_click", "key", "compose_changed", "menu_click"):
             self.widget_rule_event(event)
             return
         with self.lock:

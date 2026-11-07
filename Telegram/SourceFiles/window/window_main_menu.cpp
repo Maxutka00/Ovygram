@@ -78,6 +78,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "styles/style_window_main_menu.h"
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/plugin_menus.h"
+#endif // OVYGRAM_ENABLED
+
 #include <QtGui/QWindow>
 #include <QtGui/QScreen>
 
@@ -812,6 +816,9 @@ void MainMenu::setupMenu() {
 			_nightThemeSwitches.fire_copy(*darkMode);
 		}
 	}, _nightThemeToggle->lifetime());
+#ifdef OVYGRAM_ENABLED
+	Ovygram::FillMainMenu(_menu, controller);
+#endif // OVYGRAM_ENABLED
 }
 
 void MainMenu::resizeEvent(QResizeEvent *e) {

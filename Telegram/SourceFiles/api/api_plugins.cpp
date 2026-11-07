@@ -20,6 +20,7 @@
 #include "main/main_session.h"
 #include "mtproto/facade.h"
 #include "ovygram/plugin_elements.h"
+#include "ovygram/plugin_menus.h"
 #include "ovygram/plugin_ui.h"
 #include "ovygram/plugin_widgets.h"
 #include "ui/image/image_location.h"
@@ -167,6 +168,19 @@ PluginClient::PluginClient(not_null<Core::PluginRuntime*> runtime)
 		}
 	}, _lifetime);
 	watchAccounts();
+	Ovygram::Menus::SetDescriber([](
+			Main::Session &session,
+			PeerData *peer,
+			HistoryItem *item) {
+		auto result = QJsonObject();
+		if (peer) {
+			result.insert(u"chat"_q, Chat(session, peer));
+		}
+		if (item) {
+			result.insert(u"message"_q, Message(session, item));
+		}
+		return result;
+	});
 	_ui = std::make_unique<Ovygram::PluginUi>([=](QJsonObject event) {
 		try {
 			dispatch({
