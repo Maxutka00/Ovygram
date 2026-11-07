@@ -1,0 +1,130 @@
+"""Statistics of a chat: who writes most and at what hours, as charts.
+
+Shows how to:
+- read a chat's history page by page with client.history and offset_id;
+- report progress in an open window while a long task runs;
+- stop the work when the user closes the window (on_close);
+- draw charts on a Canvas with fill_rect and text commands.
+"""
+
+import collections
+import time
+
+from base_plugin import BasePlugin
+from desktop import client, ui
+from ui.settings import Selector
+
+__id__ = "desktop.chat_stats"
+__name__ = "Статистика чата"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Пункт «Статистика сообщений» в меню чата: самые активные участники и "
+                   "активность по часам за последние сообщения.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+LIMITS = [500, 1000, 3000]
+PAGE = 100
+TOP = 8
+BAR = "#3a8ee6"
+LABEL = "#7f8c99"
+BARS_HEIGHT = TOP * 24 + 8
+
+
+def bar_chart(rows, width=420):
+    """Horizontal bars: [(label, value)] -> canvas commands and height.
+    A canvas keeps the height it was created with, see BARS_HEIGHT."""
+    commands, top = [], 4
+    largest = max((value for _, value in rows), default=1) or 1
+    for label, value in rows:
+        length = max(2, int((width - 170) * value / largest))
+        commands += [ui.text(0, top + 14, label[:20], LABEL, 12),
+                     ui.fill_rect(140, top + 2, length, 16, BAR, radius=3),
+                     ui.text(146 + length, top + 14, str(value), LABEL, 11)]
+        top += 24
+    return commands, top + 4
+
+
+def hours_chart(hours, width=420):
+    """24 vertical bars, one per hour of the day."""
+    commands, height = [], 90
+    largest = max(hours) or 1
+    step = width / 24
+    for hour, value in enumerate(hours):
+        size = int((height - 24) * value / largest)
+        commands.append(ui.fill_rect(hour * step + 2, height - 18 - size, step - 4, size, BAR, 2))
+        if hour % 3 == 0:
+            commands.append(ui.text(hour * step + 2, height - 4, f"{hour:02}", LABEL, 10))
+    return commands, height
+
+
+class ChatStatsPlugin(BasePlugin):
+    def on_plugin_load(self):
+        ui.add_menu_item("chat", "Статистика сообщений", self.open)
+
+    def create_settings(self):
+        return [Selector("limit", "Сколько сообщений смотреть", [str(item) for item in LIMITS], 1)]
+
+    async def open(self, menu):
+        status = ui.Text("Загружаю историю…")
+        senders_canvas = ui.Canvas(BARS_HEIGHT)
+        hours_canvas = ui.Canvas(90)
+        window = ui.Window(ui.Column(
+            status,
+            ui.Text("Самые активные:"),
+            senders_canvas,
+            ui.Text("Сообщения по часам:"),
+            hours_canvas,
+        ), title=f"Статистика: {menu.chat.name}", width=460, height=520)
+        window.show()
+        try:
+            await self.collect(menu, window, status, senders_canvas, hours_canvas)
+        except Exception as error:
+            if not window.closed:
+                window.update(status, text=f"Ошибка: {error}")
+
+    async def collect(self, menu, window, status, senders_canvas, hours_canvas):
+        chat, limit = menu.chat, LIMITS[self.get_setting("limit", 1)]
+        accounts = {account.id: account for account in await client.accounts()}
+        me = accounts[chat.account_id].user_id
+        senders, hours, total, offset = collections.Counter(), [0] * 24, 0, 0
+        while total < limit:
+            page = await client.history(chat, limit=PAGE, offset_id=offset)
+            if not page or window.closed:
+                break  # The end of the history, or the user closed the window.
+            for message in page:
+                senders[self.sender_of(message, chat, me)] += 1
+                hours[time.localtime(message.date).tm_hour] += 1
+            total += len(page)
+            offset = page[-1].id
+            window.update(status, text=f"Загружено сообщений: {total}…")
+        if window.closed:
+            return
+        names = [(await self.name_of(chat, sender), count)
+                 for sender, count in senders.most_common(TOP)]
+        commands, _ = bar_chart(names)
+        window.draw(senders_canvas, commands)
+        commands, _ = hours_chart(hours)
+        window.draw(hours_canvas, commands)
+        window.update(status, text=f"Проанализировано сообщений: {total}")
+
+    @staticmethod
+    def sender_of(message, chat, me):
+        sender = getattr(message.raw, "from_id", None)
+        if sender is not None and sender.constructor_name == "peerUser":
+            return sender.user_id
+        if sender is not None and sender.constructor_name == "peerChannel":
+            return sender.channel_id | (2 << 48)
+        # Private chats omit the sender: it is either you or the other side.
+        return me if message.outgoing else chat.id
+
+    @staticmethod
+    async def name_of(chat, sender):
+        try:
+            if sender < (1 << 48):
+                user = await client.get_user(chat.account_id, sender)
+                return " ".join(part for part in (user.first_name, user.last_name) if part)
+            return (await client.get_chat(chat.account_id, sender)).name
+        except Exception:  # Not loaded in the client: show the ID.
+            return str(sender)

@@ -1,0 +1,112 @@
+"""New items of an RSS or Atom feed, sent to Saved Messages.
+
+Shows how to:
+- poll a web resource in the background with a periodic timer;
+- parse XML with the standard library, safely limiting the response size;
+- remember what was already sent, across restarts, in the data directory;
+- send messages to Saved Messages of the active account;
+- avoid flooding: the first check only remembers the current items.
+"""
+
+import json
+import urllib.request
+import xml.etree.ElementTree as ElementTree
+
+from base_plugin import BasePlugin
+from desktop import client
+from desktop_utils import run_in_background, set_timer
+from file_utils import get_plugin_data_dir
+from ui.settings import Input, Selector
+
+__id__ = "desktop.rss_feed"
+__name__ = "RSS в Избранное"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Проверяет RSS или Atom ленту и отправляет новые записи в Избранное "
+                   "активного аккаунта.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+INTERVALS = [15, 30, 60, 180]  # Minutes.
+MAX_FEED = 2 * 1024 * 1024
+MAX_SEEN = 500
+MAX_PER_CHECK = 5
+ATOM = "{http://www.w3.org/2005/Atom}"
+
+
+def fetch_items(url):
+    """[(id, title, link)] from an RSS 2.0 or Atom feed; blocking."""
+    request = urllib.request.Request(url, headers={"User-Agent": "Ovygram-plugin-example/1.0"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        data = response.read(MAX_FEED + 1)
+    if len(data) > MAX_FEED:
+        raise ValueError("Лента больше 2 МиБ.")
+    root = ElementTree.fromstring(data)
+    items = []
+    for item in root.iter("item"):  # RSS 2.0
+        link = (item.findtext("link") or "").strip()
+        items.append(((item.findtext("guid") or link).strip(),
+                      (item.findtext("title") or "").strip(), link))
+    for entry in root.iter(ATOM + "entry"):  # Atom
+        link = entry.find(ATOM + "link")
+        href = link.get("href", "") if link is not None else ""
+        items.append(((entry.findtext(ATOM + "id") or href).strip(),
+                      (entry.findtext(ATOM + "title") or "").strip(), href))
+    return [item for item in items if item[0]]
+
+
+class RssFeedPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.state_path = get_plugin_data_dir() / "seen.json"
+        self.checking = False
+        minutes = INTERVALS[self.get_setting("interval", 1)]
+        set_timer(minutes * 60, self.check_now, repeat=True)
+        self.check_now()
+
+    def create_settings(self):
+        return [
+            Input("url", "Адрес ленты", "https://github.com/telegramdesktop/tdesktop/releases.atom"),
+            Selector("interval", "Проверять каждые", [f"{value} мин" for value in INTERVALS], 1),
+        ]
+
+    def check_now(self):
+        if not self.checking:  # Don't start a second check while one runs.
+            self.checking = True
+            self.run_async(self.check())
+
+    def load_state(self):
+        try:
+            return json.loads(self.state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    async def check(self):
+        try:
+            url = self.get_setting("url", "").strip()
+            if not url.startswith(("https://", "http://")):
+                return
+            items = await run_in_background(fetch_items, url)
+            state = self.load_state()
+            seen = state.get(url)
+            new = [item for item in items if seen is not None and item[0] not in seen]
+            if new:
+                await self.send(new[:MAX_PER_CHECK], len(new))
+            state[url] = ([item[0] for item in items] + (seen or []))[:MAX_SEEN]
+            self.state_path.write_text(json.dumps(state), encoding="utf-8")
+        except Exception as error:  # A bad feed or no network: log and retry later.
+            self.log(f"Лента не проверена: {error}")
+        finally:
+            self.checking = False
+
+    async def send(self, items, total):
+        accounts = await client.accounts()
+        account = next((item for item in accounts if item.active), None)
+        if account is None:
+            return
+        saved = await client.get_chat(account, account.user_id)
+        lines = [f"• {title or 'Без заголовка'}\n{link}" for _, title, link in items]
+        if total > len(items):
+            lines.append(f"…и ещё {total - len(items)}")
+        await client.send_message(saved, "📰 Новое в ленте:\n\n" + "\n\n".join(lines),
+                                  no_webpage=True)
