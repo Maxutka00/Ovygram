@@ -111,7 +111,7 @@ jobs:
         run: python control/tools/ovygram/baseline.py cache-pack --group foundation --root "$env:GITHUB_WORKSPACE"
 
       - name: Save foundation snapshot
-        if: steps.pack-foundation.outputs.save == 'true'
+        if: steps.pack-foundation.outputs.save == 'true' || steps.restore-foundation.outputs.cache-hit == 'true'
         continue-on-error: true
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684
         with:
@@ -145,7 +145,7 @@ jobs:
         run: python control/tools/ovygram/baseline.py cache-pack --group qt --root "$env:GITHUB_WORKSPACE"
 
       - name: Save qt snapshot
-        if: steps.pack-qt.outputs.save == 'true'
+        if: steps.pack-qt.outputs.save == 'true' || steps.restore-qt.outputs.cache-hit == 'true'
         continue-on-error: true
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684
         with:
@@ -180,7 +180,7 @@ jobs:
         run: python control/tools/ovygram/baseline.py cache-pack --group extras --root "$env:GITHUB_WORKSPACE"
 
       - name: Save extras snapshot
-        if: steps.pack-extras.outputs.save == 'true'
+        if: steps.pack-extras.outputs.save == 'true' || steps.restore-extras.outputs.cache-hit == 'true'
         continue-on-error: true
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684
         with:

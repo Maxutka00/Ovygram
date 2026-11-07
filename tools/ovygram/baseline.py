@@ -310,6 +310,9 @@ def main():
                         f'Telegram/CMakeFiles/Telegram.dir/{configuration}/SourceFiles/' + unit + '.cpp.obj'
                         for unit in (
                             'core/plugin_runtime_bridge', 'core/application', 'core/launcher',
+                            'ovygram/chat_decorations', 'ovygram/chat_list_filter',
+                            'ovygram/message_decorations', 'ovygram/plugin_elements',
+                            'ovygram/plugin_paint', 'ovygram/plugin_ui', 'ovygram/plugin_widgets',
                             'settings/sections/settings_main', 'settings/sections/settings_plugins',
                             'api/api_plugins', 'api/api_updates', 'mtproto/mtp_instance',
                             'window/window_session_controller',
