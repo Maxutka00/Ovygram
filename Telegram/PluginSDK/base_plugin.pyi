@@ -2,6 +2,7 @@ from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
 from typing import Any
 from desktop._runtime import Registration
+from hook_utils import HookResult as HookResult, HookStrategy as HookStrategy
 
 class BasePlugin:
     def on_plugin_load(self) -> None: ...

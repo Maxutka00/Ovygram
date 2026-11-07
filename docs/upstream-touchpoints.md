@@ -18,6 +18,9 @@ November 2026; the higher it is, the more likely a merge conflict.
 | `Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp` | include, `RegisterElements` in `init()`, `ApplyElementRules(_wrap.get())` at the end of `updateControlsVisibility()` | 171 | Named elements `compose.*` and the message field API |
 | `Telegram/SourceFiles/dialogs/dialogs_entry.cpp` | include, a check at the start of `Entry::setChatListExistence()`, and `keepPinned` in `Entry::removeFromChatList()` | 9 | Chats hidden by plugins (`ui.hide_chats`) |
 | `Telegram/SourceFiles/history/view/history_view_message.cpp` | include and a `gsl::finally` guard after the `isHidden()` return in `Message::draw()` | 150 | Message decorations (`ui.decorate_message`) |
+| `Telegram/SourceFiles/window/window_main_menu.cpp` | include and `FillMainMenu()` at the end of `MainMenu::setupMenu()` | 25 | Plugin items in the side menu (`ui.add_menu_item("main")`) |
+| `Telegram/SourceFiles/window/window_peer_menu.cpp` | include and `FillChatMenu()` after `Filler::fill()` in `FillDialogsEntryMenu()` | 82 | Plugin items in the chat menu (`"chat"`) |
+| `Telegram/SourceFiles/history/view/history_view_context_menu.cpp` | include and `FillMessageMenu()` after `FillContextMenuItems()` in `FillContextMenu()` | 83 | Plugin items in the message menu (`"message"`) |
 | `Telegram/SourceFiles/api/api_updates.cpp` | 7 | not measured | Update hooks and message events |
 | `Telegram/SourceFiles/apiwrap.cpp` | 3 | not measured | Sent message events, sends cancelled by plugins (`sendMessage()` and `sendMessageFail()`) |
 | `Telegram/SourceFiles/mtproto/mtp_instance.cpp` | 2 | not measured | RPC hooks; a request rejected by a plugin keeps its handlers in `_parserMap` |
@@ -79,3 +82,33 @@ message in bubble coordinates (`g`) on every later exit. By then the function
 has undone the swipe-to-reply (`gestureShift`) and selection mode
 (`selectionTranslation`) shifts, so the guard applies them again. If upstream
 renames `g`, `gestureShift` or `selectionTranslation`, update the guard.
+
+## Menus
+
+Each menu gets plugin items after Telegram's own ones from one call:
+`Ovygram::FillMainMenu()` at the end of `MainMenu::setupMenu()`,
+`Ovygram::FillChatMenu()` in `FillDialogsEntryMenu()` (used by the "⋮" menu
+of the chat top bar and the chat list context menu) and
+`Ovygram::FillMessageMenu()` after `FillContextMenuItems()` in the message
+`FillContextMenu()`. Menus are built each time they open, so the calls need
+no notification when plugins change their items. If upstream splits these
+functions, keep each call after the last item is added.
+
+## Plugin sections
+
+`ui.Section` needs no upstream change: `ovygram/plugin_section.cpp` subclasses
+`Window::SectionWidget` and `Window::SectionMemento` and opens the page with
+`SessionController::showSection()`. The content belongs to the surface and
+moves between section widgets as the user navigates. The memento's
+`removeRequests()` drops it from the window history when the plugin closes
+the section, and the surface is closed when the history drops the last
+memento. If upstream changes the pure virtuals of these classes or of
+`Media::Player::FloatSectionDelegate`, update the subclasses.
+
+## Qt signals and window events
+
+`desktop.native` (`ovygram/plugin_native.cpp`) needs no upstream change: an
+application event filter reports top-level windows, and a relay object
+connected to a slot index it doesn't declare receives any Qt signal. It
+depends only on Qt's meta-object system and on the names in Telegram's own
+classes, which plugins use at their own risk.

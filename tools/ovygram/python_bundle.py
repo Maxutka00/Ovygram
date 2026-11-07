@@ -34,6 +34,11 @@ PACKAGES = {
         # Digest from the release's Python-3.13.16.tar.xz.sigstore bundle.
         "f4b1bfb3c79b5bb11b8d228a12504163b4c0dab4d679828d8f5f26b6cb6ab35d",
     ),
+    # Installs plugin dependencies in a separate process, see ovygram_deps.py.
+    "pip.whl": (
+        "https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl",
+        "fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70",
+    ),
     "pybind11.whl": (
         "https://files.pythonhosted.org/packages/88/c5/e98d9c51f3d5300d5e40ad9037dd6b3b60736fd02ab68dcc98c96be7592d/pybind11-3.0.2-py3-none-any.whl",
         "f8a6500548919cc33bcd220d5f984688326f574fa97f1107f2f4fdb4c6fb019f",
@@ -147,10 +152,11 @@ def prepare(root, downloads, sdk, system_python=False):
                 archive.extract(name, root)
         license_name = "pybind11-3.0.2.dist-info/licenses/LICENSE"
         (runtime / "pybind11-LICENSE.txt").write_bytes(archive.read(license_name))
+    shutil.copy2(checked_download(downloads, "pip.whl"), runtime / "pip.whl")
     shutil.copytree(sdk, runtime / "sdk", dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     interpreter = "System Python mode:" if system_python else "CPython 3.13.16 and"
-    print(f"{interpreter} pybind11 3.0.2 staged at {root}")
+    print(f"{interpreter} pybind11 3.0.2 and pip 26.2.2 staged at {root}")
 
 
 if __name__ == "__main__":

@@ -118,6 +118,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/plugin_menus.h"
+#endif // OVYGRAM_ENABLED
+
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
 
@@ -1979,6 +1983,9 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 
 	// Build the full message menu.
 	FillContextMenuItems(result, list, request, hasPollOption);
+#ifdef OVYGRAM_ENABLED
+	Ovygram::FillMessageMenu(result.get(), item);
+#endif // OVYGRAM_ENABLED
 
 	if (item) {
 		const auto media = item->media();

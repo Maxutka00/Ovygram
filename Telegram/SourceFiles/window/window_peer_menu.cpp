@@ -138,6 +138,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_premium.h"
 #include "styles/style_wallet.h"
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/plugin_menus.h"
+#endif // OVYGRAM_ENABLED
+
 #include <QAction>
 #include <QtWidgets/QApplication>
 
@@ -4384,6 +4388,9 @@ void FillDialogsEntryMenu(
 		Dialogs::EntryState request,
 		const PeerMenuCallback &callback) {
 	Filler(controller, request, callback).fill();
+#ifdef OVYGRAM_ENABLED
+	Ovygram::FillChatMenu(request.key.peer(), callback);
+#endif // OVYGRAM_ENABLED
 }
 
 bool FillVideoChatMenu(

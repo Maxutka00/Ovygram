@@ -18,6 +18,7 @@ import zipfile
 from base_plugin import BasePlugin
 from desktop._runtime import Runtime
 from hook_utils import HookCancelled
+from ovygram_deps import Dependencies, normalize_all
 from ui.settings import Input, Selector, Switch
 
 
@@ -64,8 +65,9 @@ def read_metadata(source, filename):
         raise ValueError('Укажите __platform__ = "desktop". Android-плагины требуют переноса.')
     if type(values.get("sdk")) is not int or not 1 <= values["sdk"] <= SDK_VERSION:
         raise ValueError(f"Поддерживаются версии Desktop SDK от 1 до {SDK_VERSION}.")
-    if values.get("requirements", []) != []:
-        raise ValueError("Установка сторонних зависимостей пока недоступна.")
+    if "requirements" in values:
+        # Kept absent when not declared: installed metadata is compared as is.
+        values["requirements"] = normalize_all(values["requirements"])
     return values
 
 
@@ -177,6 +179,8 @@ class Manager:
         self.log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
         self.logger.addHandler(self.log_handler)
         self.runtime = Runtime(self)
+        # The SDK lies in python/sdk, next to the bundled interpreter and pip.
+        self.dependencies = Dependencies(self.root, Path(__file__).resolve().parent.parent)
         self.records = json.loads(self.state.read_text(encoding="utf-8")) if self.state.exists() else {}
         if not isinstance(self.records, dict) or any(
             not PLUGIN_ID.fullmatch(plugin_id) or not isinstance(record, dict)
@@ -266,6 +270,11 @@ class Manager:
         self.runtime.contexts[plugin_id] = context
         self.marker.write_text(plugin_id, encoding="utf-8")
         try:
+            requirements = version["metadata"].get("requirements", [])
+            if not self.dependencies.satisfied(requirements):
+                if self.dependencies.waiting_for_restart(requirements):
+                    raise RuntimeError("Зависимости установлены. Перезапустите клиент.")
+                raise RuntimeError("Зависимости не установлены. Выключите и снова включите плагин.")
             directory = self.directory(version)
             entry = version["entry"]
             if len(package_path(entry).parts) != 1:
@@ -398,10 +407,47 @@ class Manager:
         if plugin_id in self.loaded:
             return
         record = self.records[plugin_id]
+        requirements = record["current"]["metadata"].get("requirements", [])
+        if not self.dependencies.satisfied(requirements):
+            if self.dependencies.waiting_for_restart(requirements):
+                self.change_record(plugin_id, {**record, "enabled": True})
+                self.errors[plugin_id] = "Зависимости установлены. Перезапустите клиент."
+                return
+            self.install_dependencies(plugin_id)
+            return
         self.change_record(plugin_id, {**record, "enabled": True})
         if not self.load(plugin_id):
             self.change_record(plugin_id, {**record, "enabled": False})
             raise RuntimeError(self.errors[plugin_id])
+
+    def install_dependencies(self, plugin_id):
+        """Resolves the requirements of every enabled plugin and this one in
+        the background; the plugin starts when they are ready."""
+        record = self.records[plugin_id]
+        requirements = set(record["current"]["metadata"].get("requirements", []))
+        for other, entry in self.records.items():
+            if entry["enabled"] and other != plugin_id:
+                requirements.update(entry["current"]["metadata"].get("requirements", []))
+
+        def done(error):
+            current = self.records.get(plugin_id)
+            if current is None or current["current"] is not record["current"]:
+                return  # Removed or updated meanwhile.
+            if error is not None:
+                self.change_record(plugin_id, {**current, "enabled": False})
+                self.report_error(plugin_id, error)
+            elif not current["enabled"]:
+                return  # Disabled meanwhile: the libraries stay for later.
+            elif self.dependencies.satisfied(record["current"]["metadata"]["requirements"]):
+                self.errors.pop(plugin_id, None)
+                if not (self.disabled or self.recovery or self.restart_required):
+                    self.load(plugin_id)
+            else:
+                self.errors[plugin_id] = "Зависимости установлены. Перезапустите клиент."
+
+        self.dependencies.install(plugin_id, sorted(requirements), done)
+        self.errors.pop(plugin_id, None)
+        self.change_record(plugin_id, {**record, "enabled": True})
 
     def disable(self, plugin_id):
         record = self.records[plugin_id]
@@ -503,14 +549,17 @@ class Manager:
         self.change_record(plugin_id, {**record, "settings": {**record["settings"], **values}})
 
     def snapshot(self):
+        dependencies = self.dependencies.status()
         return {
             "sdk_version": SDK_VERSION,
             "disabled": self.disabled,
             "recovery": self.recovery,
             "restart_required": self.restart_required,
             "log_path": str(self.root / "plugins.log"),
+            "dependencies": dependencies,
             "plugins": [
                 {**record["current"]["metadata"], "enabled": record["enabled"],
+                 "installing": dependencies["installing"] == plugin_id,
                  "loaded": plugin_id in self.loaded, "previous": record["previous"] is not None,
                  "error": self.errors.get(plugin_id, "")}
                 for plugin_id, record in sorted(self.records.items())
@@ -521,6 +570,10 @@ class Manager:
         self.check_thread()
         action = json.loads(request)
         name = action.pop("action")
+        if name in ("snapshot", "client_event", "ui_event"):
+            # A finished dependency installation starts its plugin here, on
+            # the main thread and outside of any hook.
+            self.dependencies.poll()
         allowed = {
             "snapshot": self.snapshot, "install": self.install, "enable": self.enable,
             "disable": self.disable, "rollback": self.rollback, "remove": self.remove,

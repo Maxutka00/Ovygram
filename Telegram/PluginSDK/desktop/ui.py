@@ -6,6 +6,7 @@ on the main thread, and widget callbacks always run on the main thread.
 """
 
 import uuid
+from dataclasses import dataclass
 
 from ._runtime import context
 
@@ -258,6 +259,21 @@ class ChatBar(Surface):
         return {"account_id": self.account_id, "chat_id": self.chat_id}
 
 
+class Section(Surface):
+    """A page in the main column of the active window, in place of a chat.
+
+    It has a back button and the title on top, and the content scrolls.
+    Back and the window history work as for Telegram's own pages: the user
+    can open a chat and come back. The section is closed by close(), when
+    the window history drops it (on_close is called then) or on unload.
+    """
+
+    kind = "section"
+
+    def __init__(self, content, title="", on_close=None):
+        super().__init__(content, title, on_close=on_close)
+
+
 # Built-in Telegram widgets a plugin can change. The names stay the same
 # across Telegram updates; each one may exist once per open window.
 ELEMENTS = (
@@ -398,6 +414,10 @@ class WidgetRule:
             return
         if self.method == "ui.compose.watch":
             runtime.submit_ui(self.owner, "ui.compose.watch", rule_id=self.id, enabled=False)
+        elif self.method == "ui.menu.add":
+            runtime.submit_ui(self.owner, "ui.menu.remove", rule_id=self.id)
+        elif self.method.startswith("ui.native."):
+            runtime.submit_ui(self.owner, "ui.native.disconnect", rule_id=self.id)
         else:
             runtime.submit_ui(self.owner, "ui.widgets.unrule", rule_id=self.id)
 
@@ -623,3 +643,53 @@ def set_clipboard(text):
 
 def show_dialog(content, title="", width=0, on_close=None):
     return Dialog(content, title, width, on_close=on_close).show()
+
+
+@dataclass(frozen=True)
+class MenuContext:
+    """Where a plugin menu item was clicked.
+
+    account_id is the account of the window. chat is the chat of a "chat" or
+    "message" menu, message the message of a "message" menu, otherwise None."""
+
+    account_id: str
+    chat: object = None
+    message: object = None
+
+
+_MENUS = ("main", "chat", "message")
+_CHAT_KINDS = ("user", "chat", "channel")
+
+
+def add_menu_item(menu, text, callback, kinds=None):
+    """Adds an item to a Telegram menu, after its own items.
+
+    menu is "main" (the side menu), "chat" (the chat's "⋮" menu and its
+    context menu in the chat list) or "message" (a message's context menu).
+    callback(context) gets a MenuContext; it may be a coroutine function.
+    kinds limits a "chat" or "message" item to chats of these kinds: "user",
+    "chat" (basic group), "channel" (also supergroups). The item shows from
+    the next time the menu opens. Returns a rule with remove()."""
+    _choice(menu, _MENUS, "menu")
+    if not isinstance(text, str) or not 1 <= len(text.strip()) <= 64:
+        raise ValueError("Текст пункта меню: от 1 до 64 символов.")
+    if not callable(callback):
+        raise TypeError("callback должен быть функцией.")
+    if kinds is not None:
+        if menu == "main":
+            raise ValueError("kinds применим только к меню chat и message.")
+        kinds = list(kinds)
+        if not kinds or any(kind not in _CHAT_KINDS for kind in kinds):
+            raise ValueError("kinds: непустой список из user, chat, channel.")
+
+    def clicked(value):
+        from .models import chat_from_native, message_from_native
+        chat = value.get("chat")
+        message = value.get("message")
+        return callback(MenuContext(
+            str(value.get("account_id", "")),
+            chat_from_native(chat) if chat else None,
+            message_from_native(message) if message else None))
+
+    return WidgetRule(context(), "ui.menu.add", clicked, menu=menu, text=text.strip(),
+                      kinds=kinds or [])
