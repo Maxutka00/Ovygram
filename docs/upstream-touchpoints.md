@@ -21,6 +21,7 @@ November 2026; the higher it is, the more likely a merge conflict.
 | `Telegram/SourceFiles/window/window_main_menu.cpp` | include and `FillMainMenu()` at the end of `MainMenu::setupMenu()` | 25 | Plugin items in the side menu (`ui.add_menu_item("main")`) |
 | `Telegram/SourceFiles/window/window_peer_menu.cpp` | include and `FillChatMenu()` after `Filler::fill()` in `FillDialogsEntryMenu()` | 82 | Plugin items in the chat menu (`"chat"`) |
 | `Telegram/SourceFiles/history/view/history_view_context_menu.cpp` | include and `FillMessageMenu()` after `FillContextMenuItems()` in `FillContextMenu()` | 83 | Plugin items in the message menu (`"message"`) |
+| `Telegram/SourceFiles/platform/linux/specific_linux.cpp` | `psAppDataPath()` skips `~/.TelegramDesktop`; the app ID in `Platform::start()` | 10 | Runs next to Telegram Desktop: own data, `.desktop` file, D-Bus name |
 | `Telegram/SourceFiles/api/api_updates.cpp` | 7 | not measured | Update hooks and message events |
 | `Telegram/SourceFiles/apiwrap.cpp` | 3 | not measured | Sent message events, sends cancelled by plugins (`sendMessage()` and `sendMessageFail()`) |
 | `Telegram/SourceFiles/mtproto/mtp_instance.cpp` | 2 | not measured | RPC hooks; a request rejected by a plugin keeps its handlers in `_parserMap` |
@@ -112,3 +113,13 @@ application event filter reports top-level windows, and a relay object
 connected to a slot index it doesn't declare receives any Qt signal. It
 depends only on Qt's meta-object system and on the names in Telegram's own
 classes, which plugins use at their own risk.
+
+## Linux application ID
+
+`Platform::start()` sets `io.github.maxutka00.Ovygram` as the desktop file
+name. It is also the `GApplication` ID (the D-Bus name), the Wayland app ID
+and the icon name: with Telegram's `org.telegram.desktop`, starting Ovygram
+while Telegram Desktop runs would activate Telegram. `psAppDataPath()` no
+longer falls back to `~/.TelegramDesktop`, the legacy directory of the
+official client. Packaging files use the same ID, see
+`packaging/linux` and `packaging/arch`.

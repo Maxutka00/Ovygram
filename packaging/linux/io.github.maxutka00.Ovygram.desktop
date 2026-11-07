@@ -1,0 +1,22 @@
+[Desktop Entry]
+Name=Ovygram
+GenericName=Telegram client with Python plugins
+Comment=Telegram Desktop with Python plugins
+TryExec=ovygram
+Exec=ovygram -- %U
+Icon=io.github.maxutka00.Ovygram
+Terminal=false
+StartupWMClass=Ovygram
+Type=Application
+Categories=Chat;Network;InstantMessaging;Qt;
+MimeType=x-scheme-handler/tg;x-scheme-handler/tonsite;x-scheme-handler/ton;
+Keywords=tg;chat;im;messaging;messenger;telegram;plugins;
+Actions=quit;
+SingleMainWindow=true
+X-GNOME-UsesNotifications=true
+X-GNOME-SingleWindow=true
+
+[Desktop Action quit]
+Exec=ovygram -quit
+Name=Quit Ovygram
+Icon=application-exit

@@ -84,3 +84,4 @@ tdata/
 # Generated changelog page (built by CI, deployed to GitHub Pages)
 /docs/changelog/
 tools/ovygram/template/dist/
+/dist/
