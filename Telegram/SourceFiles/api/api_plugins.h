@@ -81,6 +81,7 @@ bool PluginBeforeRpc(
 	mtpRequestId requestId,
 	MTP::details::SerializedRequest &request,
 	MTP::ResponseHandler &callbacks);
+[[nodiscard]] bool IsPluginRpcCancelled(const MTP::Error &error);
 bool PluginBeforeUpdates(Main::Session &session, MTPUpdates &updates);
 void PluginObserveUpdate(Main::Session &session, const MTPUpdate &update);
 void PluginObserveUpdates(Main::Session &session, const MTPUpdates &updates);

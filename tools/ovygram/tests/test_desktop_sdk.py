@@ -433,7 +433,7 @@ class MediaTests(unittest.IsolatedAsyncioTestCase):
                 return tl.upload.file(type=tl.storage.fileUnknown(), mtime=0, bytes=b"abc")
 
             with patch.object(media, "rpc", response):
-                self.assertEqual(await media.download_file(attachment, target), target)
+                self.assertEqual(await media.download_file(attachment, target), target.resolve())
             self.assertEqual(target.read_bytes(), b"abc")
             self.assertFalse(list(Path(directory).glob("*.part-*")))
 

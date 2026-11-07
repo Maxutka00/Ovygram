@@ -212,6 +212,40 @@ class Manager:
             path = self.directory(version)
             if path.exists():
                 shutil.rmtree(path)
+            share = self.share_directory(version)
+            if share.exists():
+                shutil.rmtree(share)
+
+    def share_directory(self, version):
+        token = self.directory(version).name
+        path = self.root / "share" / token
+        if path.resolve() != path:
+            raise ValueError("Каталог отправки выходит за пределы профиля плагинов.")
+        return path
+
+    def share_file(self, plugin_id):
+        version = self.records[plugin_id]["current"]
+        share = self.share_directory(version)
+        name = version.get("share_file")
+        if name is None:
+            package = self.directory(version)
+            if version["entry"] != "plugin.py" or (package / "plugin.json").exists():
+                raise ValueError("Обнови ZIP-плагин из исходного архива, чтобы отправить его.")
+            source = package / "plugin.py"
+            if source.resolve() != source or source.stat().st_size > MAX_SOURCE:
+                raise ValueError("Недопустимый файл плагина.")
+            share.mkdir(parents=True, exist_ok=True)
+            target = share / f"plugin-{plugin_id}.plugin"
+            if target.resolve() != target:
+                raise ValueError("Недопустимый путь отправки плагина.")
+            shutil.copyfile(source, target)
+            return str(target)
+        if name not in {f"plugin-{plugin_id}{suffix}" for suffix in (".py", ".plugin", ".zip")}:
+            raise ValueError("Недопустимое имя файла плагина.")
+        target = share / name
+        if target.resolve() != target or not target.is_file():
+            raise ValueError("Исходный пакет плагина отсутствует. Обнови плагин из файла.")
+        return str(target)
 
     def report_error(self, plugin_id, message):
         self.errors[plugin_id] = message
@@ -313,8 +347,23 @@ class Manager:
         directory = self.directory(version)
         directory.mkdir()
         try:
-            metadata, entry = unpack_package(Path(path), directory)
-            version.update(metadata=metadata, entry=entry)
+            source = Path(path)
+            suffix = source.suffix.lower()
+            if suffix not in (".py", ".plugin", ".zip"):
+                raise ValueError("Выберите файл .py, .plugin или .zip.")
+            limit = MAX_PACKAGE if suffix == ".zip" else MAX_SOURCE
+            with source.open("rb") as stream:
+                payload = stream.read(limit + 1)
+            if len(payload) > limit:
+                raise ValueError("Файл плагина превышает допустимый размер.")
+            share = self.share_directory(version)
+            share.mkdir(parents=True)
+            original = share / ("source" + suffix)
+            original.write_bytes(payload)
+            metadata, entry = unpack_package(original, directory)
+            name = f"plugin-{metadata['id']}{suffix}"
+            original.rename(share / name)
+            version.update(metadata=metadata, entry=entry, share_file=name)
             if plugin_id and plugin_id != metadata["id"]:
                 raise ValueError("ID обновления отличается от ID установленного плагина.")
             previous = self.records.get(metadata["id"])
@@ -472,6 +521,7 @@ class Manager:
             "snapshot": self.snapshot, "install": self.install, "enable": self.enable,
             "disable": self.disable, "rollback": self.rollback, "remove": self.remove,
             "resume": self.resume, "settings": self.settings, "save_settings": self.save_settings,
+            "share_file": self.share_file,
             "client_reply": self.runtime.complete,
             "client_pending": self.runtime.is_pending,
             "bridge_ready": lambda: self.runtime.ready.set(),

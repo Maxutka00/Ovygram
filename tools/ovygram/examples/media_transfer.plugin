@@ -8,7 +8,7 @@ from hook_utils import CANCEL, HookResult
 
 __id__ = "desktop.media_transfer"
 __name__ = "Проверка файлов в Избранном"
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "Ovygram"
 __description__ = "В Избранном команда /plugin-file полный_путь отправляет файл, /plugin-download в подписи скачивает вложение."
 __platform__ = "desktop"
@@ -21,6 +21,7 @@ class MediaTransferPlugin(BasePlugin):
         self.subscribe("new_message", self.new_message)
         self.subscribe("edited_message", self.new_message)
         self.add_hook("before_send", self.before_send, request="messages.sendMessage")
+        self.log("Проверка файлов в Избранном включена.")
 
     def before_send(self, message):
         if (message.request.peer.constructor_name == "inputPeerSelf"
@@ -37,15 +38,17 @@ class MediaTransferPlugin(BasePlugin):
 
     async def new_message(self, event):
         message = event.message
-        if message is None or not message.outgoing:
+        if message is None or message.text.strip() != "/plugin-download":
             return
         account = next((item for item in await client.accounts() if item.id == event.account_id), None)
         if account is None or message.chat_id != account.user_id:
             return
-        if message.text == "/plugin-download" and message.attachment is not None:
-            path = get_plugin_data_dir(account.id) / Path(message.attachment.name).name
-            await download_file(message.attachment, path, progress=self.progress)
-            self.log(f"Файл сохранён: {path.name}")
+        if message.attachment is None:
+            self.log("Добавь /plugin-download в подпись к файлу в Избранном.")
+            return
+        path = get_plugin_data_dir(account.id) / Path(message.attachment.name).name
+        await download_file(message.attachment, path, progress=self.progress)
+        self.log(f"Файл сохранён: {path.name}")
 
     def progress(self, progress):
         self.log(f"Аккаунт {progress.account_id}, {progress.transferred}/{progress.total} байт")

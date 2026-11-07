@@ -9,6 +9,10 @@ from unittest.mock import patch
 import zipfile
 
 
+sys.path.insert(0, str(Path(__file__).parents[1]))
+import dependency_cache
+
+
 spec = importlib.util.spec_from_file_location(
     'baseline', Path(__file__).parents[1] / 'baseline.py')
 baseline = importlib.util.module_from_spec(spec)
@@ -98,6 +102,54 @@ class BaselineTests(unittest.TestCase):
         (self.root / 'nested/two').write_bytes(b'4567')
         self.assertEqual(baseline.cache_size([
             self.root, self.root / 'missing']), 7)
+
+    def dependency_cache_fixture(self):
+        source = self.root / 'TBuild/tdesktop'
+        recipe = source / 'Telegram/build/prepare/prepare.py'
+        recipe.parent.mkdir(parents=True)
+        recipe.write_text('pinned recipe')
+        toolchain = dict(image='fixture', image_version='image', msvc='14.44',
+                         sdk='26100', python_version='3.12')
+        baseline.write_json(self.root / 'reports/toolchain.json', toolchain)
+        baseline.write_json(self.root / 'reports/baseline.json',
+                            {'configuration': 'Release'})
+        return baseline.cache_identity(source, toolchain)
+
+    def restore_dependencies(self, key='', required=True):
+        arguments = ['baseline.py', 'cache-restore', '--root', str(self.root),
+                     '--group', 'foundation']
+        if required:
+            arguments.append('--require-cache')
+        with patch.object(sys, 'argv', arguments), patch.dict(
+                baseline.os.environ, {'RESTORED_CACHE_KEY': key}):
+            baseline.main()
+
+    def test_required_dependency_cache_stops_on_cache_miss(self):
+        self.dependency_cache_fixture()
+        with self.assertRaisesRegex(RuntimeError, 'No compatible dependency cache'):
+            self.restore_dependencies()
+        self.assertFalse((self.root / 'TBuild/ThirdParty').exists())
+
+    def test_required_release_cache_rejects_debug_before_unpacking(self):
+        debug_identity = self.dependency_cache_fixture()
+        with patch.object(dependency_cache, 'restore') as restore:
+            with self.assertRaisesRegex(RuntimeError, 'Release dependency cache is required'):
+                self.restore_dependencies(f'{debug_identity}-foundation')
+            restore.assert_not_called()
+
+    def test_required_dependency_cache_restores_saved_release_files(self):
+        identity = baseline.release_cache_identity(self.dependency_cache_fixture())
+        library = self.root / 'TBuild/Libraries/win64/zlib/Release/zlib.lib'
+        library.parent.mkdir(parents=True)
+        library.write_bytes(b'release library fixture')
+        self.assertTrue(dependency_cache.pack(self.root, 'foundation', identity)['save'])
+        library.unlink()
+        self.restore_dependencies(f'{identity}-foundation')
+        self.assertEqual(library.read_bytes(), b'release library fixture')
+
+    def test_optional_dependency_cache_allows_initial_preparation(self):
+        self.dependency_cache_fixture()
+        self.restore_dependencies(required=False)
 
 
 if __name__ == '__main__':

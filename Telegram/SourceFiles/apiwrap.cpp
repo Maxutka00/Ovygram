@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
 
+#ifdef OVYGRAM_ENABLED
+#include "api/api_plugins.h"
+#endif
+
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
 #include "api/api_blocked_peers.h"
@@ -4953,6 +4957,24 @@ void ApiWrap::sendMessage(
 		const auto fail = [=](
 				const MTP::Error &error,
 				const MTP::Response &response) {
+#ifdef OVYGRAM_ENABLED
+			if (Api::IsPluginRpcCancelled(error)) {
+				auto &data = _session->data();
+				data.unregisterMessageRandomId(randomId);
+				data.unregisterMessageSentData(randomId);
+				if (const auto item = data.message(newId);
+					item && item->isLocal() && item->isSending()) {
+					data.histories().deleteMessages({ newId }, false);
+				}
+				if (clearCloudDraft) {
+					history->finishSavingCloudDraft(
+						draftTopicRootId,
+						draftMonoforumPeerId,
+						Api::UnixtimeFromMsgId(response.outerMsgId));
+				}
+				return;
+			}
+#endif
 			if (error.type() == u"MESSAGE_EMPTY"_q) {
 				lastMessage->destroy();
 			} else {
