@@ -588,6 +588,9 @@ bool PluginClient::beforeRpc(
 		requestData = QString::fromLatin1(changed.toBase64());
 		for (auto &[randomId, text] : localTexts) {
 			if (const auto item = owner->data().message(owner->data().messageIdByRandomId(randomId))) {
+				// Registration keeps an existing entry, and a short sent
+				// update restores the message text from that entry.
+				owner->data().unregisterMessageSentData(randomId);
 				owner->data().registerMessageSentData(randomId, item->history()->peer->id, text.text);
 				item->setText(std::move(text));
 			}
