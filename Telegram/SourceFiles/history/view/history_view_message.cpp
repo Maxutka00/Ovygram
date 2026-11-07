@@ -72,6 +72,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_iv.h"
 #include "styles/style_polls.h"
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/message_decorations.h"
+#endif // OVYGRAM_ENABLED
+
 namespace HistoryView {
 namespace {
 
@@ -1795,6 +1799,12 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	if (g.width() < 1) {
 		return;
 	}
+#ifdef OVYGRAM_ENABLED
+	// Runs on every return below, over the finished message.
+	const auto ovygramDecorations = gsl::finally([&] {
+		Ovygram::PaintMessage(p, data(), g);
+	});
+#endif // OVYGRAM_ENABLED
 
 	const auto item = data();
 	const auto media = this->media();

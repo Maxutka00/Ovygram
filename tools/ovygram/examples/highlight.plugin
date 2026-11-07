@@ -1,0 +1,55 @@
+from base_plugin import BasePlugin
+from desktop import client, ui
+from desktop_utils import run_on_ui
+from ui.settings import Input
+
+__id__ = "desktop.highlight"
+__name__ = "Подсветка и скрытие чатов"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Подсвечивает сообщения с ключевым словом, а Ctrl+Alt+H скрывает "
+                   "открытый чат из списка или возвращает его.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+MARK = [ui.fill_rect(0, 6, 3, 24, "#ff9800", radius=1), ui.text(-58, 16, "★ найдено", "#ff9800", size=11)]
+
+
+class HighlightPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.decorated = {}
+        self.chat = None
+        self.hidden = None
+        self.subscribe("chat_changed", self.on_chat)
+        self.subscribe("new_message", lambda event: self.check(event.message))
+        ui.on_key("Ctrl+Alt+H", self.toggle_hidden, replace=True)
+
+    def keyword(self):
+        return (self.get_setting("keyword", "ovygram") or "").lower()
+
+    def check(self, message):
+        keyword = self.keyword()
+        key = (message.account_id, message.chat_id, message.id)
+        if keyword and keyword in (message.text or "").lower() and key not in self.decorated:
+            self.decorated[key] = ui.decorate_message(message, MARK, background="#22ff9800")
+
+    def on_chat(self, event):
+        self.chat = event.chat
+        if event.chat is not None:
+            self.run_async(self.scan(event.chat))
+
+    async def scan(self, chat):
+        """Highlights matches among the last 50 messages of an opened chat."""
+        messages = await client.history(chat, limit=50)
+        await run_on_ui(lambda: [self.check(message) for message in messages])
+
+    def toggle_hidden(self):
+        if self.hidden is not None:
+            self.hidden.remove()
+            self.hidden = None
+        elif self.chat is not None:
+            self.hidden = ui.hide_chats([self.chat])
+
+    def create_settings(self):
+        return [Input("keyword", "Ключевое слово", "ovygram")]

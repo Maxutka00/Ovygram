@@ -521,6 +521,75 @@ def replace_compose_text(start, end, text, select=False):
                                     text=str(text), select=bool(select))
 
 
+class MessageDecoration:
+    """Draw commands painted over a message bubble, in bubble coordinates;
+    negative x or y count from the bubble's right or bottom edge.
+    background tints the bubble. Undone by remove() or unload."""
+
+    def __init__(self, owner, message, commands, background):
+        self.owner = owner
+        self.id = _identity()
+        self.account_id = str(message.account_id)
+        self.chat_id = str(message.chat_id)
+        self.message_id = int(message.id)
+        self.update(commands, background)
+
+    def update(self, commands=(), background=None):
+        if background is not None and (not isinstance(background, str) or not background.startswith("#")):
+            raise ValueError("background задаётся строкой #rrggbb или #aarrggbb.")
+        self.owner.manager.runtime.submit_ui(
+            self.owner, "ui.message_decoration.set", decoration_id=self.id,
+            account_id=self.account_id, chat_id=self.chat_id, message_id=self.message_id,
+            commands=list(commands), background=background)
+
+    def remove(self):
+        if self.owner.active:
+            self.owner.manager.runtime.submit_ui(
+                self.owner, "ui.message_decoration.remove", decoration_id=self.id)
+
+
+def decorate_message(message, commands=(), background=None):
+    """Decorates a Message from desktop.client or an event."""
+    if not all(hasattr(message, key) for key in ("account_id", "chat_id", "id")):
+        raise TypeError("decorate_message принимает Message из desktop.client.")
+    return MessageDecoration(context(), message, commands, background)
+
+
+class HiddenChats:
+    """Chats hidden from the chat list and its folders by the calling
+    plugin. Search still finds them. Undone by remove() or unload."""
+
+    def __init__(self, owner, chats):
+        self.owner = owner
+        self.id = _identity()
+        self.accounts = {}
+        for chat in chats:
+            account_id = getattr(chat, "account_id", None)
+            chat_id = getattr(chat, "id", None)
+            if not account_id or chat_id is None:
+                raise TypeError("hide_chats принимает Chat из desktop.client.")
+            self.accounts.setdefault(str(account_id), set()).add(str(chat_id))
+        if not self.accounts:
+            raise ValueError("Укажи хотя бы один чат.")
+        for account_id, chat_ids in self.accounts.items():
+            owner.manager.runtime.submit_ui(
+                owner, "ui.chat_list.hide", rule_id=f"{self.id}:{account_id}",
+                account_id=account_id, chat_ids=sorted(chat_ids))
+
+    def remove(self):
+        if not self.owner.active:
+            return
+        for account_id in self.accounts:
+            self.owner.manager.runtime.submit_ui(
+                self.owner, "ui.chat_list.unhide", rule_id=f"{self.id}:{account_id}")
+        self.accounts = {}
+
+
+def hide_chats(chats):
+    """Hides chats (Chat objects, possibly from several accounts)."""
+    return HiddenChats(context(), list(chats))
+
+
 async def compose_text():
     """Text of the message field in the active window, or None."""
     owner = context()

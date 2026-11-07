@@ -440,6 +440,36 @@ class DesktopUiTests(unittest.TestCase):
         self.assertIsNone(instance.suggestion)
         self.assertIn("ui.widgets.unrule", [item["method"] for item in self.commands_list()])
 
+    def test_hide_chats_and_message_decorations(self):
+        from desktop.models import chat_from_native
+        first = chat_from_native(self.native_chat("42", 777))
+        second = chat_from_native(self.native_chat("43", 5))
+        hidden = self.as_plugin("plugin.a", lambda: ui.hide_chats([first, second]))
+        sent = sorted((item["account_id"], tuple(item["chat_ids"])) for item in self.commands_list())
+        self.assertEqual(sent, [("42", ("777",)), ("43", ("5",))])
+        self.as_plugin("plugin.a", hidden.remove)
+        self.assertEqual({item["method"] for item in self.commands_list()}, {"ui.chat_list.unhide"})
+        with self.assertRaises(ValueError):
+            self.as_plugin("plugin.a", lambda: ui.hide_chats([]))
+        message = Message("42", 9, 777, "text", 0, False)
+        mark = self.as_plugin("plugin.a", lambda: ui.decorate_message(
+            message, [ui.text(-58, 16, "★", "#ff9800")], background="#22ff9800"))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["chat_id"], command["message_id"]),
+                         ("ui.message_decoration.set", "777", 9))
+        self.as_plugin("plugin.a", mark.remove)
+        self.assertEqual(self.commands_list()[-1]["method"], "ui.message_decoration.remove")
+
+    def test_highlight_example(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/highlight.plugin"))
+        self.manager.enable(plugin_id)
+        self.commands_list()
+        self.runtime.emit("new_message", Event("42", Message("42", 3, 777, "Привет, Ovygram!", 0, False)))
+        self.runtime.emit("new_message", Event("42", Message("42", 4, 777, "без слова", 0, False)))
+        sent = [item for item in self.commands_list() if item["method"] == "ui.message_decoration.set"]
+        self.assertEqual([item["message_id"] for item in sent], [3])
+        self.assertNotIn(plugin_id, self.manager.errors)
+
 
 if __name__ == "__main__":
     unittest.main()

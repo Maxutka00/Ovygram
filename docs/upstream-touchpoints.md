@@ -16,6 +16,8 @@ November 2026; the higher it is, the more likely a merge conflict.
 | `Telegram/SourceFiles/history/view/history_view_top_bar_widget.cpp` | include, `RegisterElements` in the constructor, `ApplyElementRules` before `updateControlsGeometry()` in `updateControlsVisibility()` | 46 | Named elements `chat.top_bar.*` (`ui.element`) |
 | `Telegram/SourceFiles/dialogs/ui/dialogs_layout.cpp` | include and `PaintChatRow()` after `PaintRow()` in the chat row `RowPainter::Paint()` | 22 | Chat list decorations (`ui.decorate_chat`) |
 | `Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp` | include, `RegisterElements` in `init()`, `ApplyElementRules` at the end of `updateControlsVisibility()` | 171 | Named elements `compose.*` and the message field API |
+| `Telegram/SourceFiles/dialogs/dialogs_entry.cpp` | include and a check at the start of `Entry::setChatListExistence()` | 9 | Chats hidden by plugins (`ui.hide_chats`) |
+| `Telegram/SourceFiles/history/view/history_view_message.cpp` | include and a `gsl::finally` guard after `countGeometry()` in `Message::draw()` | 150 | Message decorations (`ui.decorate_message`) |
 | `Telegram/SourceFiles/api/api_updates.cpp` | 7 | not measured | Update hooks and message events |
 | `Telegram/SourceFiles/apiwrap.cpp` | 2 | not measured | Sent message events |
 | `Telegram/SourceFiles/mtproto/mtp_instance.cpp` | 2 | not measured | RPC hooks |
@@ -56,3 +58,18 @@ an event filter, so a missed call only causes a short flicker.
 `RowPainter::Paint()` overload for chat rows and paints plugin decorations
 over the finished row. If upstream renames `peer`, `context.width` or
 `context.active` there, update the call.
+
+## Hidden chats
+
+`Ovygram::HiddenFromChatList()` turns `exists` off in
+`Dialogs::Entry::setChatListExistence()`, the single place that adds a chat
+to the chat list and its folders. When a rule changes, Ovygram calls
+`History::updateChatListExistence()` for the affected chats. Search uses other
+paths and still finds hidden chats.
+
+## Message decorations
+
+`Message::draw()` has many returns, so the call is a `gsl::finally` guard
+created right after the `g.width() < 1` check; it paints over the finished
+message in bubble coordinates (`g`) on every exit. If upstream renames `g` or
+`countGeometry()`, update the guard.

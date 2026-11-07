@@ -2,6 +2,8 @@
 
 #include "ovygram/chat_bars.h"
 #include "ovygram/chat_decorations.h"
+#include "ovygram/chat_list_filter.h"
+#include "ovygram/message_decorations.h"
 #include "ovygram/plugin_elements.h"
 #include "ovygram/plugin_widgets.h"
 
@@ -425,6 +427,12 @@ void PluginUi::handle(const QJsonObject &command) {
 		Elements::RemovePlugin(command.value(u"plugin_id"_q).toString());
 		Widgets::RemovePlugin(command.value(u"plugin_id"_q).toString());
 		Decorations::RemovePlugin(command.value(u"plugin_id"_q).toString());
+		ChatListFilter::RemovePlugin(command.value(u"plugin_id"_q).toString());
+		MessageDecorations::RemovePlugin(command.value(u"plugin_id"_q).toString());
+	} else if (method.startsWith(u"ui.message_decoration."_q)) {
+		MessageDecorations::Handle(command);
+	} else if (method.startsWith(u"ui.chat_list."_q)) {
+		ChatListFilter::Handle(command);
 	} else if (method.startsWith(u"ui.decoration."_q)) {
 		Decorations::Handle(command);
 	} else if (method.startsWith(u"ui.element."_q)
