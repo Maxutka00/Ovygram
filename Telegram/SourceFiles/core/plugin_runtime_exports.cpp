@@ -7,8 +7,8 @@
 #include <stdexcept>
 
 extern "C" void *OvygramCreate(
-	const wchar_t *python,
-	const wchar_t *profile,
+	const OvygramPathChar *python,
+	const OvygramPathChar *profile,
 	int disabled,
 	OvygramOutput output,
 	void *context) noexcept {

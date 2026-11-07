@@ -1,12 +1,62 @@
 #include "core/plugin_runtime.h"
 #include "core/plugin_runtime_api.h"
 
+#ifdef _WIN32
 #include <Windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 #include <mutex>
 #include <stdexcept>
 
 namespace Core {
 namespace {
+
+#ifdef _WIN32
+using Library = HMODULE;
+constexpr auto kHostFile = L"ovygram_host.dll";
+
+[[nodiscard]] Library LoadHost(const std::filesystem::path &host) {
+	const auto result = LoadLibraryExW(
+		host.c_str(),
+		nullptr,
+		LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+	if (!result) {
+		throw std::runtime_error("Python host DLL failed to load: " + std::to_string(GetLastError()));
+	}
+	return result;
+}
+
+[[nodiscard]] void *ResolveHost(Library library, const char *name) {
+	return reinterpret_cast<void*>(GetProcAddress(library, name));
+}
+
+void UnloadHost(Library library) {
+	FreeLibrary(library);
+}
+#else
+using Library = void*;
+constexpr auto kHostFile = "ovygram_host.so";
+
+[[nodiscard]] Library LoadHost(const std::filesystem::path &host) {
+	// CPython extension modules do not link libpython on Linux, they expect
+	// its symbols in the global scope, so RTLD_GLOBAL is required here.
+	const auto result = dlopen(host.c_str(), RTLD_NOW | RTLD_GLOBAL);
+	if (!result) {
+		throw std::runtime_error(std::string("Python host failed to load: ") + dlerror());
+	}
+	return result;
+}
+
+[[nodiscard]] void *ResolveHost(Library library, const char *name) {
+	return dlsym(library, name);
+}
+
+void UnloadHost(Library library) {
+	dlclose(library);
+}
+#endif
 
 struct Output {
 	std::string text;
@@ -25,7 +75,7 @@ void CopyOutput(void *context, const char *data, std::size_t length) noexcept {
 } // namespace
 
 struct PluginRuntime::Private {
-	HMODULE library = nullptr;
+	Library library = nullptr;
 	void *runtime = nullptr;
 	decltype(&OvygramDispatch) dispatch = nullptr;
 	decltype(&OvygramDestroy) destroy = nullptr;
@@ -41,7 +91,7 @@ struct PluginRuntime::Private {
 			destroy(runtime);
 			// Keep the host mapped until exit. A plugin may have unmanaged threads.
 		} else if (library) {
-			FreeLibrary(library);
+			UnloadHost(library);
 		}
 	}
 
@@ -69,16 +119,9 @@ PluginRuntime::PluginRuntime(
 	const std::filesystem::path &profile,
 	bool disabled)
 : _private(std::make_unique<Private>()) {
-	const auto host = std::filesystem::absolute(python / L"ovygram_host.dll");
-	_private->library = LoadLibraryExW(
-		host.c_str(),
-		nullptr,
-		LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
-	if (!_private->library) {
-		throw std::runtime_error("Python host DLL failed to load: " + std::to_string(GetLastError()));
-	}
+	_private->library = LoadHost(std::filesystem::absolute(python / kHostFile));
 	const auto resolve = [&](const char *name) {
-		const auto address = GetProcAddress(_private->library, name);
+		const auto address = ResolveHost(_private->library, name);
 		if (!address) {
 			throw std::runtime_error(std::string("Missing Python host export: ") + name);
 		}

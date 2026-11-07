@@ -43,24 +43,52 @@ void CheckStatus(PyStatus status) {
 	}
 }
 
+void SetPath(
+		PyConfig &config,
+		wchar_t **field,
+		const std::filesystem::path &path) {
+	CheckStatus(PyConfig_SetString(&config, field, path.wstring().c_str()));
+}
+
 void InitializePython(const std::filesystem::path &directory) {
-	if (!std::filesystem::is_regular_file(directory / L"python313.zip")
-		|| !std::filesystem::is_regular_file(directory / L"sdk/ovygram_runtime.py")) {
-		throw std::runtime_error("Bundled Python or Plugin SDK is missing.");
+	if (!std::filesystem::is_regular_file(directory / L"sdk/ovygram_runtime.py")) {
+		throw std::runtime_error("Plugin SDK is missing.");
 	}
+#ifndef OVYGRAM_SYSTEM_PYTHON
+	if (!std::filesystem::is_regular_file(directory / L"python313.zip")) {
+		throw std::runtime_error("Bundled Python is missing.");
+	}
+#endif // !OVYGRAM_SYSTEM_PYTHON
+#ifndef _WIN32
+	// Otherwise paths are encoded by the locale, which fails to open
+	// a non-ASCII directory under the C locale even during the startup.
+	auto preconfig = PyPreConfig();
+	PyPreConfig_InitIsolatedConfig(&preconfig);
+	preconfig.utf8_mode = 1;
+	CheckStatus(Py_PreInitialize(&preconfig));
+#endif
 	PyConfig config;
 	PyConfig_InitIsolatedConfig(&config);
 	config.install_signal_handlers = 0;
 	config.configure_c_stdio = 0;
 	config.site_import = 0;
 	config.write_bytecode = 0;
+#ifdef OVYGRAM_SYSTEM_PYTHON
+	py::initialize_interpreter(&config, 0, nullptr, false);
+	py::module_::import("sys").attr("path").attr("append")(
+		(directory / L"sdk").wstring());
+#else // OVYGRAM_SYSTEM_PYTHON
 	config.module_search_paths_set = 1;
 	try {
-		CheckStatus(PyConfig_SetString(&config, &config.home, directory.c_str()));
+#ifdef _WIN32
 		const auto executable = directory / L"python.exe";
-		CheckStatus(PyConfig_SetString(&config, &config.executable, executable.c_str()));
+#else
+		const auto executable = directory / L"python";
+#endif
+		SetPath(config, &config.home, directory);
+		SetPath(config, &config.executable, executable);
 		for (const auto *name : { L"python313.zip", L".", L"sdk" }) {
-			const auto path = directory / name;
+			const auto path = (directory / name).wstring();
 			CheckStatus(PyWideStringList_Append(&config.module_search_paths, path.c_str()));
 		}
 	} catch (...) {
@@ -68,6 +96,7 @@ void InitializePython(const std::filesystem::path &directory) {
 		throw;
 	}
 	py::initialize_interpreter(&config, 0, nullptr, false);
+#endif // OVYGRAM_SYSTEM_PYTHON
 }
 
 } // namespace
