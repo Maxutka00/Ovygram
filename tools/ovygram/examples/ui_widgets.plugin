@@ -1,0 +1,63 @@
+from base_plugin import BasePlugin
+from desktop import ui
+
+__id__ = "desktop.ui_widgets"
+__name__ = "Окна и отрисовка"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = "Диалог, отдельное окно и холст с собственной отрисовкой."
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class UiWidgetsPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.clicks = 0
+        self.points = []
+        self.counter = ui.Text("Нажатий: 0")
+        self.canvas = ui.Canvas(160, self.drawing(), on_click=self.on_canvas)
+        self.window = ui.Window(
+            ui.Column(
+                "Нажмите на холст, чтобы поставить точку.",
+                self.canvas,
+                ui.Row(
+                    ui.Button("Очистить", on_click=self.clear),
+                    ui.Button("Диалог", on_click=self.show_dialog),
+                ),
+            ),
+            title="Окна и отрисовка",
+            width=420,
+            height=360,
+            on_close=lambda: self.log("Окно закрыто."),
+        ).show()
+
+    def drawing(self):
+        commands = [ui.fill_rect(0, 0, 400, 160, "#1e2a38", radius=8),
+                    ui.text(12, 24, f"Точек: {len(self.points)}", "#ffffff", size=14)]
+        for x, y in self.points:
+            commands.append(ui.ellipse(x - 5, y - 5, 10, 10, "#4fc3f7"))
+        return commands
+
+    def on_canvas(self, x, y):
+        self.points.append((x, y))
+        self.window.draw(self.canvas, self.drawing())
+
+    def clear(self):
+        self.points.clear()
+        self.window.draw(self.canvas, self.drawing())
+
+    def show_dialog(self):
+        def pressed():
+            self.clicks += 1
+            dialog.update(self.counter, text=f"Нажатий: {self.clicks}")
+
+        dialog = ui.show_dialog(
+            ui.Column(
+                self.counter,
+                ui.Input(placeholder="Текст", on_change=lambda value: self.log(f"Ввод: {value}")),
+                ui.Switch("Переключатель", on_toggle=lambda value: self.log(f"Переключатель: {value}")),
+                ui.Button("Нажать", on_click=pressed),
+            ),
+            title="Диалог плагина",
+        )

@@ -20,6 +20,13 @@ target_sources(Telegram PRIVATE
     SourceFiles/core/plugin_runtime_bridge.cpp
     SourceFiles/core/plugin_runtime_api.h
     SourceFiles/core/plugin_runtime.h
+    SourceFiles/ovygram/chat_bars.h
+    SourceFiles/ovygram/plugin_elements.cpp
+    SourceFiles/ovygram/plugin_elements.h
+    SourceFiles/ovygram/plugin_ui.cpp
+    SourceFiles/ovygram/plugin_widgets.cpp
+    SourceFiles/ovygram/plugin_widgets.h
+    SourceFiles/ovygram/plugin_ui.h
     SourceFiles/settings/sections/settings_plugins.cpp
     SourceFiles/settings/sections/settings_plugins.h
 )
@@ -74,6 +81,9 @@ add_dependencies(Telegram ovygram_host)
 add_custom_command(TARGET Telegram POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${plugin_python}/python" "$<TARGET_FILE_DIR:Telegram>/python"
+    # The bundle holds the SDK from the time it was staged; use the current one.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/PluginSDK" "$<TARGET_FILE_DIR:Telegram>/python/sdk"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:ovygram_host>"
         "$<TARGET_FILE_DIR:Telegram>/python/$<TARGET_FILE_NAME:ovygram_host>"

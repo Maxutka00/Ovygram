@@ -73,6 +73,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QWindow>
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/plugin_elements.h"
+#endif // OVYGRAM_ENABLED
+
 namespace HistoryView {
 namespace {
 
@@ -161,6 +165,14 @@ TopBarWidget::TopBarWidget(
 	_menuToggle->addClickHandler([=](auto) { showPeerMenu(); });
 	_menuToggle->setAcceptBoth(true, true);
 	_infoToggle->setClickedCallback([=] { toggleInfoSection(); });
+#ifdef OVYGRAM_ENABLED
+	Ovygram::RegisterElements({
+		{ "chat.top_bar.call", _call.data() },
+		{ "chat.top_bar.search", _search.data() },
+		{ "chat.top_bar.info", _infoToggle.data() },
+		{ "chat.top_bar.menu", _menuToggle.data() },
+	});
+#endif // OVYGRAM_ENABLED
 	_back->setAcceptBoth();
 	_back->addClickHandler([=](Qt::MouseButton) {
 		InvokeQueued(_back.data(), [=] { backClicked(); });
@@ -1449,6 +1461,9 @@ void TopBarWidget::updateControlsVisibility() {
 	if (_membersShowArea) {
 		_membersShowArea->setVisible(!_chooseForReportReason);
 	}
+#ifdef OVYGRAM_ENABLED
+	Ovygram::ApplyElementRules(this);
+#endif // OVYGRAM_ENABLED
 	updateControlsGeometry();
 }
 

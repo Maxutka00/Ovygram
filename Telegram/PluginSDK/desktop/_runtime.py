@@ -105,6 +105,9 @@ class Runtime:
         self.requests = {}
         self.tasks = {}
         self.ui_calls = {}
+        self.surfaces = {}
+        self.element_handlers = {}
+        self.widget_rules = {}
         self.sequence = 0
         self.loop = None
         self.thread = None
@@ -304,6 +307,92 @@ class Runtime:
         except InvalidStateError:
             pass
 
+    def submit_ui(self, owner, method, **parameters):
+        if not owner.active:
+            raise RuntimeError("Плагин уже выгружен.")
+        self.submit({"id": uuid.uuid4().hex, "method": method,
+                     "plugin_id": owner.plugin_id, **parameters})
+
+    def add_surface(self, surface):
+        with self.lock:
+            if surface.id in self.surfaces:
+                raise RuntimeError("Окно уже показано.")
+            self.surfaces[surface.id] = surface
+
+    def ui_event(self, event):
+        if event.get("type") == "element_click":
+            self.element_click(event)
+            return
+        if event.get("type") in ("widget_click", "key"):
+            self.widget_rule_event(event)
+            return
+        with self.lock:
+            surface = self.surfaces.get(event.get("object_id"))
+        if surface is None or surface.owner.plugin_id != event.get("plugin_id"):
+            plugin_id = event.get("plugin_id")
+            if event.get("type") == "error" and plugin_id in self.contexts:
+                self.manager.report_error(plugin_id, str(event.get("value", "")))
+            return
+        owner = surface.owner
+        kind = event.get("type")
+        if kind == "error":
+            if event.get("closed"):
+                with self.lock:
+                    self.surfaces.pop(surface.id, None)
+                surface.closed = True
+            self.manager.report_error(owner.plugin_id, str(event.get("value", "")))
+            return
+        if kind == "closed":
+            with self.lock:
+                self.surfaces.pop(surface.id, None)
+            surface.closed = True
+            callback = surface.on_close
+        else:
+            node = surface.nodes.get(event.get("node_id"))
+            callback = node.handlers.get(kind) if node is not None else None
+            if kind in ("change", "toggle") and node is not None:
+                node.props["text" if kind == "change" else "value"] = event.get("value")
+        if callback is None or not owner.active:
+            return
+        try:
+            value = event.get("value")
+            result = (self.call(owner, callback) if value is None
+                      else self.call(owner, callback, *value) if isinstance(value, list)
+                      else self.call(owner, callback, value))
+            if inspect.iscoroutine(result):
+                self.schedule(owner, result)
+        except BaseException as error:
+            self.manager.report_error(owner.plugin_id, str(error) or type(error).__name__)
+
+    def element_click(self, event):
+        plugin_id = event.get("plugin_id")
+        with self.lock:
+            callback = self.element_handlers.get((plugin_id, event.get("element")))
+        owner = self.contexts.get(plugin_id)
+        if callback is None or owner is None or not owner.active:
+            return
+        try:
+            result = self.call(owner, callback)
+            if inspect.iscoroutine(result):
+                self.schedule(owner, result)
+        except BaseException as error:
+            self.manager.report_error(plugin_id, str(error) or type(error).__name__)
+
+    def widget_rule_event(self, event):
+        with self.lock:
+            entry = self.widget_rules.get(event.get("rule_id"))
+        if entry is None:
+            return
+        owner, callback = entry
+        if not owner.active or owner.plugin_id != event.get("plugin_id"):
+            return
+        try:
+            result = self.call(owner, callback)
+            if inspect.iscoroutine(result):
+                self.schedule(owner, result)
+        except BaseException as error:
+            self.manager.report_error(owner.plugin_id, str(error) or type(error).__name__)
+
     def execute_ui(self, call_id):
         with self.lock:
             entry = self.ui_calls.pop(call_id, None)
@@ -406,11 +495,24 @@ class Runtime:
                 if item[0].plugin_id == plugin_id:
                     self.ui_calls.pop(key)
                     item[2].cancel()
+            for key in [key for key in self.element_handlers if key[0] == plugin_id]:
+                self.element_handlers.pop(key)
+            for key in [key for key, (owner, _) in self.widget_rules.items()
+                        if owner.plugin_id == plugin_id]:
+                self.widget_rules.pop(key)
+            surfaces = [key for key, item in self.surfaces.items() if item.owner.plugin_id == plugin_id]
+            for key in surfaces:
+                self.surfaces.pop(key).closed = True
         for key in pending:
             try:
                 self.submit({"method": "cancel", "id": key, "plugin_id": plugin_id})
             except RuntimeError:
                 pass
+        try:
+            # Also closes UI the plugin queued before its surfaces were registered.
+            self.submit({"method": "ui.close_plugin", "id": uuid.uuid4().hex, "plugin_id": plugin_id})
+        except RuntimeError:
+            pass
         self.contexts.pop(plugin_id, None)
 
     def stop(self):

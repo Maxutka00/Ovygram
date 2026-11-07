@@ -137,6 +137,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <limits>
 #include <QtCore/QMimeData>
 
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/chat_bars.h"
+#endif // OVYGRAM_ENABLED
+
 namespace HistoryView {
 
 namespace {
@@ -4520,7 +4524,12 @@ void ChatWidget::updateControlsGeometry() {
 		+ (_subsectionTabs ? _subsectionTabs->topSkip() : 0);
 	_topControls->move(tabsLeftSkip, topControlsTop);
 	_topControls->resizeToWidth(innerWidth);
-	const auto top = topControlsTop + _topControls->height();
+	const auto top = topControlsTop + _topControls->height()
+#ifdef OVYGRAM_ENABLED
+		+ Ovygram::LayoutChatBars(this, _peer, tabsLeftSkip,
+			topControlsTop + _topControls->height(), innerWidth)
+#endif // OVYGRAM_ENABLED
+		;
 
 	auto bottom = height();
 	const auto bottomHeight = _bottom->contentHeight();

@@ -19,6 +19,8 @@
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "mtproto/facade.h"
+#include "ovygram/plugin_ui.h"
+#include "ovygram/plugin_widgets.h"
 #include "ui/image/image_location.h"
 #include "ui/toast/toast.h"
 #include "window/window_controller.h"
@@ -148,6 +150,16 @@ PluginClient::PluginClient(not_null<Core::PluginRuntime*> runtime)
 		}
 	}, _lifetime);
 	watchAccounts();
+	_ui = std::make_unique<Ovygram::PluginUi>([=](QJsonObject event) {
+		try {
+			dispatch({
+				{ u"action"_q, u"ui_event"_q },
+				{ u"event"_q, event },
+			});
+		} catch (const std::exception &error) {
+			LOG(("Ovygram UI event: %1").arg(QString::fromUtf8(error.what())));
+		}
+	});
 	_runtime->setClient([=](const std::string &request) {
 		const auto data = QByteArray::fromStdString(request);
 		crl::on_main(this, [=] { receive(data); });
@@ -263,6 +275,23 @@ void PluginClient::receive(const QByteArray &request) {
 			throw std::runtime_error("Invalid client command.");
 		}
 		const auto method = command.value(u"method"_q).toString();
+		if (method.startsWith(u"ui."_q)) {
+			try {
+				_ui->handle(command);
+			} catch (const std::exception &error) {
+				dispatch({
+					{ u"action"_q, u"ui_event"_q },
+					{ u"event"_q, QJsonObject{
+						{ u"plugin_id"_q, command.value(u"plugin_id"_q) },
+						{ u"object_id"_q, command.value(u"object_id"_q) },
+						{ u"type"_q, u"error"_q },
+						{ u"value"_q, QString::fromUtf8(error.what()) },
+						{ u"closed"_q, method == u"ui.show"_q },
+					} },
+				});
+			}
+			return;
+		}
 		if (method == u"cancel"_q) {
 			const auto pending = _pending.find(id);
 			if (pending != _pending.end()
@@ -278,7 +307,10 @@ void PluginClient::receive(const QByteArray &request) {
 			}).toBool()) {
 			return;
 		}
-		if (method == u"python_ui"_q) {
+		if (method.startsWith(u"widgets."_q)) {
+			reply(id, Ovygram::Widgets::Request(command));
+			return;
+		} else if (method == u"python_ui"_q) {
 			reply(id, dispatch({
 				{ u"action"_q, u"ui_execute"_q },
 				{ u"call_id"_q, command.value(u"call_id"_q) },
@@ -394,11 +426,27 @@ void PluginClient::rpc(const QJsonObject &command, not_null<Main::Session*> owne
 			auto messages = MTPmessages_Messages();
 			from = buffer.constData();
 			if (messages.read(from, from + buffer.size()) && from == buffer.constData() + buffer.size()) {
-				const auto peerId = PeerId(command.value(u"chat_id"_q).toString().toULongLong());
-				const auto channel = peerIsChannel(peerId)
-					? weak->data().channelLoaded(peerToChannel(peerId))
-					: nullptr;
-				weak->data().processExistingMessages(channel, messages);
+				if (command.value(u"feed"_q).toString() == u"new"_q) {
+					// A message the plugin sent itself: the short sent reply has
+					// no local message to fill, so add it to the history.
+					messages.match([](const MTPDmessages_messagesNotModified &) {
+					}, [&](const auto &data) {
+						weak->data().processUsers(data.vusers());
+						weak->data().processChats(data.vchats());
+						for (const auto &message : data.vmessages().v) {
+							weak->data().addNewMessage(
+								message,
+								MessageFlags(),
+								NewMessageType::Unread);
+						}
+					});
+				} else {
+					const auto peerId = PeerId(command.value(u"chat_id"_q).toString().toULongLong());
+					const auto channel = peerIsChannel(peerId)
+						? weak->data().channelLoaded(peerToChannel(peerId))
+						: nullptr;
+					weak->data().processExistingMessages(channel, messages);
+				}
 			}
 		}
 		reply(id, QJsonObject{ { u"data"_q, encoded } });

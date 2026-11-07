@@ -528,6 +528,7 @@ class Manager:
             "native_hook": self.runtime.native_hook,
             "client_event": self.runtime.native_event,
             "ui_execute": self.runtime.execute_ui,
+            "ui_event": self.runtime.ui_event,
         }
         try:
             return json.dumps({"result": allowed[name](**action)}, ensure_ascii=False)
