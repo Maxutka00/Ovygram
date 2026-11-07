@@ -93,3 +93,14 @@ of the chat top bar and the chat list context menu) and
 `FillContextMenu()`. Menus are built each time they open, so the calls need
 no notification when plugins change their items. If upstream splits these
 functions, keep each call after the last item is added.
+
+## Plugin sections
+
+`ui.Section` needs no upstream change: `ovygram/plugin_section.cpp` subclasses
+`Window::SectionWidget` and `Window::SectionMemento` and opens the page with
+`SessionController::showSection()`. The content belongs to the surface and
+moves between section widgets as the user navigates. The memento's
+`removeRequests()` drops it from the window history when the plugin closes
+the section, and the surface is closed when the history drops the last
+memento. If upstream changes the pure virtuals of these classes or of
+`Media::Player::FloatSectionDelegate`, update the subclasses.

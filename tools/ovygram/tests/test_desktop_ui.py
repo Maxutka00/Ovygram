@@ -407,6 +407,26 @@ class DesktopUiTests(unittest.TestCase):
         self.manager.disable(plugin_id)
         self.assertIn("ui.close_plugin", [item["method"] for item in self.commands_list()])
 
+    def test_section_is_shown_and_closed_by_the_window(self):
+        closed = []
+        section = self.as_plugin("plugin.a", lambda: ui.Section(
+            ui.Column(ui.Text("x")), title="Страница", on_close=lambda: closed.append(True)).show())
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["kind"], command["title"]),
+                         ("ui.show", "section", "Страница"))
+        # The window history dropped the section.
+        self.event(plugin_id="plugin.a", object_id=section.id, type="closed")
+        self.assertTrue(section.closed)
+        self.assertEqual(closed, [True])
+        with self.assertRaises(ui.ObjectDestroyed):
+            section.update(section.content.children[0], text="y")
+
+    def test_section_example_opens_from_the_main_menu(self):
+        plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/section.plugin"))
+        self.manager.enable(plugin_id)
+        menus = [item for item in self.commands_list() if item["method"] == "ui.menu.add"]
+        self.assertEqual([item["menu"] for item in menus], ["main"])
+
     def load_math(self):
         plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/math_autocomplete.plugin"))
         self.manager.enable(plugin_id)

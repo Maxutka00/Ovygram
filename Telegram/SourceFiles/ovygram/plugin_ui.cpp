@@ -7,6 +7,7 @@
 #include "ovygram/plugin_elements.h"
 #include "ovygram/plugin_menus.h"
 #include "ovygram/plugin_paint.h"
+#include "ovygram/plugin_section.h"
 #include "ovygram/plugin_widgets.h"
 
 #include "base/algorithm.h"
@@ -331,6 +332,8 @@ struct PluginUi::Object {
 	std::unique_ptr<Ui::SeparatePanel> panel;
 	base::unique_qptr<Ui::RpWidget> bar;
 	base::unique_qptr<Ui::RpWidget> overlay;
+	base::unique_qptr<Ui::RpWidget> section;
+	QString title;
 	QString accountId;
 	QString chatId;
 	std::map<QString, QPointer<QWidget>> nodes;
@@ -363,9 +366,13 @@ PluginUi::~PluginUi() {
 	auto objects = base::take(_objects);
 	for (const auto &[id, object] : objects) {
 		object->silent = true;
+		if (object->section) {
+			_sectionClosed.fire_copy(id);
+		}
 		for (const auto widget : std::initializer_list<QObject*>{
 				object->bar.get(),
 				object->overlay.get(),
+				object->section.get(),
 				object->box.data() }) {
 			if (widget) {
 				QObject::disconnect(widget, nullptr, this, nullptr);
@@ -535,6 +542,25 @@ void PluginUi::show(const QJsonObject &command) {
 		});
 		_objects.emplace(objectId, std::move(owned));
 		relayoutChats();
+	} else if (kind == u"section"_q) {
+		const auto window = Core::App().activePrimaryWindow();
+		const auto controller = window ? window->sessionController() : nullptr;
+		if (!controller) {
+			throw std::runtime_error("No Telegram window with an account.");
+		}
+		// Owned here and shown by the section widget, which the window
+		// creates and destroys as the user navigates.
+		auto layout = base::make_unique_q<Ui::VerticalLayout>(
+			static_cast<QWidget*>(nullptr));
+		layout->add(build(*object, layout.get(), tree, 0), st::boxRowPadding);
+		layout->hide();
+		object->title = title;
+		object->section = base::unique_qptr<Ui::RpWidget>(layout.release());
+		connect(object->section.get(), &QObject::destroyed, this, [=] {
+			destroyed(objectId);
+		});
+		_objects.emplace(objectId, std::move(owned));
+		ShowPluginSection(controller, objectId);
 	} else {
 		throw std::runtime_error("Unknown surface kind.");
 	}
@@ -820,8 +846,14 @@ void PluginUi::close(const QString &objectId, bool notify) {
 	// Deleted after erase(): their destroyed() handler looks up _objects.
 	auto bar = std::move(object->bar);
 	auto overlay = std::move(object->overlay);
+	auto section = std::move(object->section);
 	_objects.erase(i);
 	overlay = nullptr;
+	if (section) {
+		// Leaves the window history and the screen.
+		_sectionClosed.fire_copy(objectId);
+		section = nullptr;
+	}
 	if (bar) {
 		bar = nullptr;
 		relayoutChats();
@@ -853,7 +885,35 @@ void PluginUi::destroyed(const QString &objectId) {
 	// cleared, so the bar must be released here, not deleted a second time.
 	[[maybe_unused]] const auto released = i->second->bar.release();
 	[[maybe_unused]] const auto overlay = i->second->overlay.release();
+	const auto section = i->second->section.release();
 	_objects.erase(i);
+	if (section) {
+		_sectionClosed.fire_copy(objectId);
+	}
+}
+
+Ui::RpWidget *PluginUi::sectionContent(const QString &objectId) const {
+	const auto i = _objects.find(objectId);
+	return (i != end(_objects)) ? i->second->section.get() : nullptr;
+}
+
+QString PluginUi::sectionTitle(const QString &objectId) const {
+	const auto i = _objects.find(objectId);
+	return (i != end(_objects)) ? i->second->title : QString();
+}
+
+rpl::producer<> PluginUi::sectionClosed(const QString &objectId) const {
+	return _sectionClosed.events(
+	) | rpl::filter([=](const QString &id) {
+		return id == objectId;
+	}) | rpl::to_empty;
+}
+
+void PluginUi::sectionGone(const QString &objectId) {
+	// Deferred: called while the window changes its history.
+	crl::on_main(this, [=] {
+		close(objectId, true);
+	});
 }
 
 void PluginUi::send(

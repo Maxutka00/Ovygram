@@ -1,0 +1,46 @@
+from base_plugin import BasePlugin
+from desktop import client, ui
+
+__id__ = "desktop.section"
+__name__ = "Раздел плагина"
+__version__ = "1.0.0"
+__author__ = "Ovygram"
+__description__ = ("Открывает собственную страницу плагина в основной колонке "
+                   "из главного меню: аккаунты и счётчик нажатий.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class SectionPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.section = None
+        self.clicks = 0
+        ui.add_menu_item("main", "Раздел плагина", self.open)
+
+    async def open(self, menu):
+        accounts = await client.accounts()
+        if self.section is not None and not self.section.closed:
+            self.section.close()
+        self.counter = ui.Text(self.counter_text())
+        content = ui.Column(
+            ui.Text("Аккаунты:"),
+            *(ui.Text(("● " if account.active else "○ ") + account.name) for account in accounts),
+            ui.Spacer(12),
+            self.counter,
+            ui.Row(
+                ui.Button("Нажать", on_click=self.on_click, width="fit"),
+                ui.Button("Закрыть", on_click=lambda: self.section.close(), width="fit"),
+                ui.Spacer(0, stretch=1),
+            ),
+        )
+        self.section = ui.Section(content, title="Раздел плагина",
+                                  on_close=lambda: self.log("Раздел закрыт"))
+        self.section.show()
+
+    def counter_text(self):
+        return f"Нажатий: {self.clicks}"
+
+    def on_click(self):
+        self.clicks += 1
+        self.section.update(self.counter, text=self.counter_text())
