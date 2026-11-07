@@ -81,6 +81,31 @@ class ExampleTests(unittest.TestCase):
                          ["pillow>=11", "qrcode[pil]>=8.2,<9"])
 
 
+class TemplateTests(unittest.TestCase):
+    def test_template_packs_and_runs(self):
+        import shutil, subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "project"
+            shutil.copytree(ROOT / "tools/ovygram/template", project)
+            archive = Path(subprocess.run([sys.executable, "pack.py"], cwd=project, check=True,
+                                          capture_output=True, text=True).stdout.strip())
+            self.assertEqual(archive.name, "example.template-1.0.0.zip")
+            import zipfile
+            with zipfile.ZipFile(archive) as packed:
+                self.assertEqual(sorted(packed.namelist()), ["helpers.py", "main.py", "plugin.json"])
+            manager = Manager(Path(temporary) / "profile")
+            manager.runtime.sender = lambda command: None
+            try:
+                plugin_id = manager.install(str(archive))
+                manager.enable(plugin_id)
+                self.assertIn(plugin_id, manager.loaded)
+                instance = manager.loaded[plugin_id][0]
+                self.assertEqual([field.key for field in instance.create_settings()],
+                                 ["name", "excited"])
+            finally:
+                manager.shutdown()
+
+
 class DependencyManagerTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
