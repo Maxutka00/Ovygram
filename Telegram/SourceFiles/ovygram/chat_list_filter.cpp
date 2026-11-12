@@ -21,7 +21,7 @@ namespace Ovygram {
 namespace {
 
 struct Rule {
-	QString pluginId;
+	QString installationId;
 	QString accountId;
 	std::set<QString> chatIds;
 };
@@ -87,7 +87,7 @@ void Handle(const QJsonObject &command) {
 	auto &rules = Rules();
 	if (method == u"ui.chat_list.hide"_q) {
 		auto rule = Rule{
-			.pluginId = command.value(u"plugin_id"_q).toString(),
+			.installationId = command.value(u"installation_id"_q).toString(),
 			.accountId = command.value(u"account_id"_q).toString(),
 		};
 		for (const auto &value : command.value(u"chat_ids"_q).toArray()) {
@@ -126,11 +126,11 @@ void Handle(const QJsonObject &command) {
 	}
 }
 
-void RemovePlugin(const QString &pluginId) {
+void RemovePlugin(const QString &installationId) {
 	auto removed = std::vector<Rule>();
 	auto &rules = Rules();
 	for (auto i = begin(rules); i != end(rules);) {
-		if (i->second.pluginId == pluginId) {
+		if (i->second.installationId == installationId) {
 			removed.push_back(std::move(i->second));
 			i = rules.erase(i);
 		} else {

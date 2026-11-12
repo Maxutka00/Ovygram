@@ -18,6 +18,6 @@ void Handle(const QJsonObject &command);
 // Requests with a reply: "native.methods" and "native.invoke".
 [[nodiscard]] QJsonValue Request(const QJsonObject &command);
 
-void RemovePlugin(const QString &pluginId);
+void RemovePlugin(const QString &installationId);
 
 } // namespace Ovygram::Native

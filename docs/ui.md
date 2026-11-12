@@ -221,16 +221,16 @@ Telegram нажатие не получает. `off_click()` снимает об
 
 | Пример | Что показывает |
 | --- | --- |
-| [`ui_widgets`](../tools/ovygram/examples/ui_widgets.plugin) | Окно, холст, диалог |
-| [`chat_bar`](../tools/ovygram/examples/chat_bar.plugin) | Полоса в чате |
-| [`section`](../tools/ovygram/examples/section.plugin) | Страница плагина из главного меню |
-| [`menus`](../tools/ovygram/examples/menus.plugin) | Пункты в трёх меню |
-| [`top_bar`](../tools/ovygram/examples/top_bar.plugin) | Скрытие и перехват кнопок, цвета |
-| [`widget_inspector`](../tools/ovygram/examples/widget_inspector.plugin) | Дерево виджетов, Ctrl+Shift+I |
-| [`chat_style`](../tools/ovygram/examples/chat_style.plugin) | Декорация чатов, Ctrl+Alt+U |
-| [`highlight`](../tools/ovygram/examples/highlight.plugin) | Декорация сообщений, скрытие чата, Ctrl+Alt+H |
-| [`math_autocomplete`](../tools/ovygram/examples/math_autocomplete.plugin) | Работа со строкой ввода |
-| [`native_events`](../tools/ovygram/examples/native_events.plugin) | События окон и сигналы Qt, Ctrl+Alt+N |
+| [`ui_widgets`](../tools/ovygram/examples/ui_widgets.ovyplugin) | Окно, холст, диалог |
+| [`chat_bar`](../tools/ovygram/examples/chat_bar.ovyplugin) | Полоса в чате |
+| [`section`](../tools/ovygram/examples/section.ovyplugin) | Страница плагина из главного меню |
+| [`menus`](../tools/ovygram/examples/menus.ovyplugin) | Пункты в трёх меню |
+| [`top_bar`](../tools/ovygram/examples/top_bar.ovyplugin) | Скрытие и перехват кнопок, цвета |
+| [`widget_inspector`](../tools/ovygram/examples/widget_inspector.ovyplugin) | Дерево виджетов, Ctrl+Shift+I |
+| [`chat_style`](../tools/ovygram/examples/chat_style.ovyplugin) | Декорация чатов, Ctrl+Alt+U |
+| [`highlight`](../tools/ovygram/examples/highlight.ovyplugin) | Декорация сообщений, скрытие чата, Ctrl+Alt+H |
+| [`math_autocomplete`](../tools/ovygram/examples/math_autocomplete.ovyplugin) | Работа со строкой ввода |
+| [`native_events`](../tools/ovygram/examples/native_events.ovyplugin) | События окон и сигналы Qt, Ctrl+Alt+N |
 
 Все точки перехвата собраны в [справочнике](hooks.md). Проверка в клиенте —
 по [чек-листу](ui-checklist.md).

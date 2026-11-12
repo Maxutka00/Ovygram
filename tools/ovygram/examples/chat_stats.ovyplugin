@@ -14,9 +14,10 @@ from base_plugin import BasePlugin
 from desktop import client, ui
 from ui.settings import Selector
 
-__id__ = "desktop.chat_stats"
+__id__ = "chat_stats"
 __name__ = "Статистика чата"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Пункт «Статистика сообщений» в меню чата: самые активные участники и "
                    "активность по часам за последние сообщения.")

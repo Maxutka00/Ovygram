@@ -153,7 +153,7 @@ bool Filter::eventFilter(QObject *watched, QEvent *e) {
 			return false;
 		}
 		auto replace = false;
-		for (const auto &[pluginId, replaces] : i->second.clicks) {
+		for (const auto &[installationId, replaces] : i->second.clicks) {
 			replace = replace || replaces;
 		}
 		const auto inside = element->widget->rect().contains(
@@ -161,12 +161,12 @@ bool Filter::eventFilter(QObject *watched, QEvent *e) {
 		if (type == QEvent::MouseButtonRelease && inside && Get().send) {
 			const auto name = element->name;
 			auto plugins = std::vector<QString>();
-			for (const auto &[pluginId, replaces] : i->second.clicks) {
-				plugins.push_back(pluginId);
+			for (const auto &[installationId, replaces] : i->second.clicks) {
+				plugins.push_back(installationId);
 			}
-			for (const auto &pluginId : plugins) {
+			for (const auto &installationId : plugins) {
 				Get().send(QJsonObject{
-					{ u"plugin_id"_q, pluginId },
+					{ u"installation_id"_q, installationId },
 					{ u"type"_q, u"element_click"_q },
 					{ u"element"_q, name },
 				});
@@ -246,9 +246,9 @@ void WatchField(not_null<Ui::InputField*> field) {
 		}
 		const auto value = FieldState(field);
 		const auto watchers = state.composeWatchers;
-		for (const auto &[ruleId, pluginId] : watchers) {
+		for (const auto &[ruleId, installationId] : watchers) {
 			state.send(QJsonObject{
-				{ u"plugin_id"_q, pluginId },
+				{ u"installation_id"_q, installationId },
 				{ u"type"_q, u"compose_changed"_q },
 				{ u"rule_id"_q, ruleId },
 				{ u"value"_q, value },
@@ -266,7 +266,7 @@ void WatchField(not_null<Ui::InputField*> field) {
 	return result;
 }
 
-void SetColors(const QString &pluginId, const QJsonObject &colors) {
+void SetColors(const QString &installationId, const QJsonObject &colors) {
 	auto &state = Get();
 	auto parsed = std::vector<std::pair<QByteArray, QColor>>();
 	for (auto i = colors.begin(); i != colors.end(); ++i) {
@@ -294,13 +294,13 @@ void SetColors(const QString &pluginId, const QJsonObject &colors) {
 	if (!state.palette) {
 		state.palette = before;
 	}
-	state.paletteOwners.insert(pluginId);
+	state.paletteOwners.insert(installationId);
 	style::NotifyPaletteChanged();
 }
 
-void ResetColors(const QString &pluginId) {
+void ResetColors(const QString &installationId) {
 	auto &state = Get();
-	if (!state.paletteOwners.erase(pluginId) || !state.paletteOwners.empty()) {
+	if (!state.paletteOwners.erase(installationId) || !state.paletteOwners.empty()) {
 		return;
 	}
 	if (state.palette) {
@@ -346,7 +346,7 @@ void SetEventSender(std::function<void(QJsonObject)> send) {
 
 void Handle(const QJsonObject &command) {
 	const auto method = command.value(u"method"_q).toString();
-	const auto pluginId = command.value(u"plugin_id"_q).toString();
+	const auto installationId = command.value(u"installation_id"_q).toString();
 	const auto name = command.value(u"element"_q).toString();
 	// Edits made by plugin commands aren't reported back as user edits, so a
 	// plugin reacting to changes can't loop on its own edits.
@@ -356,17 +356,17 @@ void Handle(const QJsonObject &command) {
 	if (method == u"ui.element.hide"_q) {
 		auto &hiding = Get().rules[name].hiding;
 		if (command.value(u"hidden"_q).toBool()) {
-			hiding.insert(pluginId);
+			hiding.insert(installationId);
 		} else {
-			hiding.erase(pluginId);
+			hiding.erase(installationId);
 		}
 		ApplyAll(name);
 	} else if (method == u"ui.element.click"_q) {
 		auto &clicks = Get().rules[name].clicks;
 		if (command.value(u"enabled"_q).toBool()) {
-			clicks[pluginId] = command.value(u"replace"_q).toBool();
+			clicks[installationId] = command.value(u"replace"_q).toBool();
 		} else {
-			clicks.erase(pluginId);
+			clicks.erase(installationId);
 		}
 	} else if (method == u"ui.compose.set"_q) {
 		const auto field = ComposeField();
@@ -402,15 +402,15 @@ void Handle(const QJsonObject &command) {
 	} else if (method == u"ui.compose.watch"_q) {
 		const auto ruleId = command.value(u"rule_id"_q).toString();
 		if (command.value(u"enabled"_q).toBool()) {
-			Get().composeWatchers[ruleId] = pluginId;
+			Get().composeWatchers[ruleId] = installationId;
 		} else {
 			Get().composeWatchers.erase(ruleId);
 		}
 	} else if (method == u"ui.palette"_q) {
 		if (command.value(u"reset"_q).toBool()) {
-			ResetColors(pluginId);
+			ResetColors(installationId);
 		} else {
-			SetColors(pluginId, command.value(u"colors"_q).toObject());
+			SetColors(installationId, command.value(u"colors"_q).toObject());
 		}
 	} else {
 		throw std::runtime_error("Unknown UI element command.");
@@ -431,21 +431,21 @@ QJsonValue Request(const QJsonObject &command) {
 	throw std::runtime_error("Unknown element request.");
 }
 
-void RemovePlugin(const QString &pluginId) {
+void RemovePlugin(const QString &installationId) {
 	std::erase_if(Get().composeWatchers, [&](const auto &entry) {
-		return entry.second == pluginId;
+		return entry.second == installationId;
 	});
 	auto changed = std::vector<QString>();
 	for (auto &[name, rules] : Get().rules) {
-		rules.clicks.erase(pluginId);
-		if (rules.hiding.erase(pluginId)) {
+		rules.clicks.erase(installationId);
+		if (rules.hiding.erase(installationId)) {
 			changed.push_back(name);
 		}
 	}
 	for (const auto &name : changed) {
 		ApplyAll(name);
 	}
-	ResetColors(pluginId);
+	ResetColors(installationId);
 }
 
 } // namespace Elements

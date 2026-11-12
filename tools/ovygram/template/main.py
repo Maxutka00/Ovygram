@@ -5,9 +5,10 @@ from ui.settings import Input, Switch
 from .helpers import greeting
 
 # Metadata is read without running the code, so it must be plain literals.
-__id__ = "example.template"  # Lowercase, unique: e.g. "yourname.plugin_name".
+__id__ = "example_template"  # Latin letters, digits and _, up to 25: e.g. "yourname_weather".
 __name__ = "Шаблон плагина"
-__version__ = "1.0.0"
+__version__ = "1.0.0"  # Numbers with dots, a suffix after a dot: 1.2, 1.2b.
+__release__ = False  # True: public, published to the plugin repository after review.
 __author__ = "Автор"
 __description__ = "Отвечает на новые сообщения в журнал и добавляет пункт в меню сообщения."
 __platform__ = "desktop"

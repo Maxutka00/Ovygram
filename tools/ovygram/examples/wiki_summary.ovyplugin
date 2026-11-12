@@ -17,9 +17,10 @@ from desktop import ui
 from desktop_utils import run_in_background
 from ui.settings import Selector
 
-__id__ = "desktop.wiki_summary"
+__id__ = "wiki_summary"
 __name__ = "Что это? (Википедия)"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "Пункт «Что это?» в меню сообщения показывает краткую справку из Википедии."
 __platform__ = "desktop"

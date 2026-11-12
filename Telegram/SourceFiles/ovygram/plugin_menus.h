@@ -53,7 +53,7 @@ void SetDescriber(Describer describer);
 
 // "ui.menu.add" and "ui.menu.remove".
 void Handle(const QJsonObject &command);
-void RemovePlugin(const QString &pluginId);
+void RemovePlugin(const QString &installationId);
 
 } // namespace Menus
 } // namespace Ovygram

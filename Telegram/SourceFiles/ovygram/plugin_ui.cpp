@@ -327,7 +327,7 @@ int LayoutChatBars(QWidget *chat, PeerData *peer, int left, int top, int width) 
 }
 
 struct PluginUi::Object {
-	QString pluginId;
+	QString installationId;
 	QString objectId;
 	QPointer<Ui::BoxContent> box;
 	std::unique_ptr<Ui::SeparatePanel> panel;
@@ -398,14 +398,14 @@ void PluginUi::handle(const QJsonObject &command) {
 	} else if (method == u"ui.close"_q) {
 		close(command.value(u"object_id"_q).toString(), true);
 	} else if (method == u"ui.close_plugin"_q) {
-		closePlugin(command.value(u"plugin_id"_q).toString());
-		Elements::RemovePlugin(command.value(u"plugin_id"_q).toString());
-		Widgets::RemovePlugin(command.value(u"plugin_id"_q).toString());
-		Decorations::RemovePlugin(command.value(u"plugin_id"_q).toString());
-		ChatListFilter::RemovePlugin(command.value(u"plugin_id"_q).toString());
-		MessageDecorations::RemovePlugin(command.value(u"plugin_id"_q).toString());
-		Menus::RemovePlugin(command.value(u"plugin_id"_q).toString());
-		Native::RemovePlugin(command.value(u"plugin_id"_q).toString());
+		closePlugin(command.value(u"installation_id"_q).toString());
+		Elements::RemovePlugin(command.value(u"installation_id"_q).toString());
+		Widgets::RemovePlugin(command.value(u"installation_id"_q).toString());
+		Decorations::RemovePlugin(command.value(u"installation_id"_q).toString());
+		ChatListFilter::RemovePlugin(command.value(u"installation_id"_q).toString());
+		MessageDecorations::RemovePlugin(command.value(u"installation_id"_q).toString());
+		Menus::RemovePlugin(command.value(u"installation_id"_q).toString());
+		Native::RemovePlugin(command.value(u"installation_id"_q).toString());
 	} else if (method.startsWith(u"ui.menu."_q)) {
 		Menus::Handle(command);
 	} else if (method.startsWith(u"ui.native."_q)) {
@@ -436,7 +436,7 @@ void PluginUi::show(const QJsonObject &command) {
 	}
 	auto owned = std::make_unique<Object>();
 	const auto object = owned.get();
-	object->pluginId = command.value(u"plugin_id"_q).toString();
+	object->installationId = command.value(u"installation_id"_q).toString();
 	object->objectId = objectId;
 	const auto title = command.value(u"title"_q).toString();
 	const auto tree = command.value(u"tree"_q).toObject();
@@ -866,10 +866,10 @@ void PluginUi::close(const QString &objectId, bool notify) {
 	}
 }
 
-void PluginUi::closePlugin(const QString &pluginId) {
+void PluginUi::closePlugin(const QString &installationId) {
 	auto ids = std::vector<QString>();
 	for (const auto &[id, object] : _objects) {
-		if (object->pluginId == pluginId) {
+		if (object->installationId == installationId) {
 			ids.push_back(id);
 		}
 	}
@@ -928,7 +928,7 @@ void PluginUi::send(
 		const QString &type,
 		QJsonValue value) {
 	auto event = QJsonObject{
-		{ u"plugin_id"_q, object.pluginId },
+		{ u"installation_id"_q, object.installationId },
 		{ u"object_id"_q, object.objectId },
 		{ u"node_id"_q, nodeId },
 		{ u"type"_q, type },

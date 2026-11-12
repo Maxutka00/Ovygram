@@ -6,9 +6,10 @@ from base_plugin import BasePlugin
 from desktop import ui
 from file_utils import get_plugin_data_dir
 
-__id__ = "desktop.qr_code"
+__id__ = "qr_code"
 __name__ = "QR-код"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Показывает QR-код текста сообщения из его контекстного меню. "
                    "Пример плагина со сторонними библиотеками.")

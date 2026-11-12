@@ -2,9 +2,10 @@ from base_plugin import BasePlugin
 from desktop import ui
 from desktop_utils import run_on_ui, set_timer
 
-__id__ = "desktop.widget_inspector"
+__id__ = "widget_inspector"
 __name__ = "Инспектор виджетов"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "Ctrl+Shift+I показывает дерево виджетов окна и подсвечивает верхнюю панель чата."
 __platform__ = "desktop"

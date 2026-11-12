@@ -17,9 +17,10 @@ from desktop import client, ui
 from desktop_utils import set_timer
 from file_utils import get_plugin_data_dir
 
-__id__ = "desktop.reminders"
+__id__ = "reminders"
 __name__ = "Напоминания"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Пункты «Напомнить через…» в меню сообщения. Напоминание приходит в "
                    "Избранное и сохраняется после перезапуска клиента.")

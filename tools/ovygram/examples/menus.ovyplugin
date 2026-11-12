@@ -1,9 +1,10 @@
 from base_plugin import BasePlugin
 from desktop import client, ui
 
-__id__ = "desktop.menus"
+__id__ = "menus"
 __name__ = "Пункты меню"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Добавляет пункты в главное меню, меню чата и меню сообщения: "
                    "сводка, копирование ID чата, текста сообщения и цитата в поле ввода.")

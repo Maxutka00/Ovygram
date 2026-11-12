@@ -17,9 +17,10 @@ from desktop_utils import run_in_background, set_timer
 from file_utils import get_plugin_data_dir
 from ui.settings import Input, Selector
 
-__id__ = "desktop.currency_rates"
+__id__ = "currency_rates"
 __name__ = "Курсы валют"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Страница с курсами валют из главного меню. Данные open.er-api.com, "
                    "обновление раз в час, кэш на диске.")

@@ -21,7 +21,7 @@ namespace Ovygram {
 namespace {
 
 struct Decoration {
-	QString pluginId;
+	QString installationId;
 	QString accountId;
 	QString chatId;
 	MsgId messageId = 0;
@@ -94,7 +94,7 @@ void Handle(const QJsonObject &command) {
 	auto &decorations = Decorations();
 	if (method == u"ui.message_decoration.set"_q) {
 		auto decoration = Decoration{
-			.pluginId = command.value(u"plugin_id"_q).toString(),
+			.installationId = command.value(u"installation_id"_q).toString(),
 			.accountId = command.value(u"account_id"_q).toString(),
 			.chatId = command.value(u"chat_id"_q).toString(),
 			.messageId = MsgId(command.value(u"message_id"_q).toInteger()),
@@ -127,11 +127,11 @@ void Handle(const QJsonObject &command) {
 	}
 }
 
-void RemovePlugin(const QString &pluginId) {
+void RemovePlugin(const QString &installationId) {
 	auto removed = std::vector<Decoration>();
 	auto &decorations = Decorations();
 	for (auto i = begin(decorations); i != end(decorations);) {
-		if (i->second.pluginId == pluginId) {
+		if (i->second.installationId == installationId) {
 			removed.push_back(std::move(i->second));
 			i = decorations.erase(i);
 		} else {

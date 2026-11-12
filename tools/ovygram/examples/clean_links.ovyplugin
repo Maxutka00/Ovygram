@@ -15,9 +15,10 @@ from base_plugin import BasePlugin
 from hook_utils import MODIFY, HookResult
 from ui.settings import Switch
 
-__id__ = "desktop.clean_links"
+__id__ = "clean_links"
 __name__ = "Чистые ссылки"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Убирает из отправляемых ссылок метки отслеживания: utm_*, fbclid, gclid, "
                    "si, igshid и другие.")

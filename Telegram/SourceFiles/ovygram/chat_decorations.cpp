@@ -25,7 +25,7 @@ namespace Ovygram {
 namespace {
 
 struct Decoration {
-	QString pluginId;
+	QString installationId;
 	QString accountId;
 	QString chatId; // "*" decorates every chat of the account.
 	QColor background;
@@ -99,7 +99,7 @@ void Handle(const QJsonObject &command) {
 	auto &decorations = Get().decorations;
 	if (method == u"ui.decoration.set"_q) {
 		auto decoration = Decoration{
-			.pluginId = command.value(u"plugin_id"_q).toString(),
+			.installationId = command.value(u"installation_id"_q).toString(),
 			.accountId = command.value(u"account_id"_q).toString(),
 			.chatId = command.value(u"chat_id"_q).toString(),
 			.ops = ParsePaintOps(command.value(u"commands"_q).toArray()),
@@ -120,9 +120,9 @@ void Handle(const QJsonObject &command) {
 	RepaintChatLists();
 }
 
-void RemovePlugin(const QString &pluginId) {
+void RemovePlugin(const QString &installationId) {
 	const auto removed = std::erase_if(Get().decorations, [&](const auto &entry) {
-		return entry.second.pluginId == pluginId;
+		return entry.second.installationId == installationId;
 	});
 	if (removed) {
 		RepaintChatLists();

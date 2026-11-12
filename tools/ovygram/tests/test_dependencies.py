@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "Telegram/PluginSDK"))
 
 from ovygram_deps import Dependencies, normalize, normalize_all
-from ovygram_runtime import Manager, read_metadata
+from ovygram_runtime import Manager, plugin_metadata
 
 
 class FakePip:
@@ -41,7 +41,7 @@ def plugin_source(identity, requirements, module):
     return (
         "from base_plugin import BasePlugin\n"
         f"__id__ = {identity!r}\n__name__ = 'Test'\n__version__ = '1.0'\n"
-        "__author__ = 'Test'\n__description__ = 'Test'\n"
+        "__author__ = 'Test'\n__description__ = 'Test'\n__release__ = False\n"
         "__platform__ = 'desktop'\n__desktop_sdk__ = 2\n"
         f"__requirements__ = {requirements!r}\n"
         "class TestPlugin(BasePlugin):\n"
@@ -66,18 +66,19 @@ class RequirementTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_all([f"p{i}" for i in range(33)])
 
-    def test_metadata_keeps_requirements_absent_when_not_declared(self):
-        base = ("__id__ = 'a.b'\n__name__ = 'A'\n__version__ = '1'\n__author__ = 'A'\n"
-                "__description__ = 'A'\n__platform__ = 'desktop'\n__desktop_sdk__ = 2\n")
-        self.assertNotIn("requirements", read_metadata(base.encode(), "x"))
-        values = read_metadata((base + "__requirements__ = ['Six==1.17']\n").encode(), "x")
+    def test_metadata_requirements_default_to_none(self):
+        base = ("__id__ = 'a_b'\n__name__ = 'A'\n__version__ = '1'\n__author__ = 'A'\n"
+                "__description__ = 'A'\n__release__ = False\n__platform__ = 'desktop'\n"
+                "__desktop_sdk__ = 2\n")
+        self.assertEqual(plugin_metadata(base.encode(), "x")["requirements"], [])
+        values = plugin_metadata((base + "__requirements__ = ['Six==1.17']\n").encode(), "x")
         self.assertEqual(values["requirements"], ["six==1.17"])
 
 
 class ExampleTests(unittest.TestCase):
     def test_qr_example_declares_its_libraries(self):
-        source = (ROOT / "tools/ovygram/examples/qr_code.plugin").read_bytes()
-        self.assertEqual(read_metadata(source, "qr_code.plugin")["requirements"],
+        source = (ROOT / "tools/ovygram/examples/qr_code.ovyplugin").read_bytes()
+        self.assertEqual(plugin_metadata(source, "qr_code.ovyplugin")["requirements"],
                          ["pillow>=11", "qrcode[pil]>=8.2,<9"])
 
 
@@ -89,7 +90,7 @@ class TemplateTests(unittest.TestCase):
             shutil.copytree(ROOT / "tools/ovygram/template", project)
             archive = Path(subprocess.run([sys.executable, "pack.py"], cwd=project, check=True,
                                           capture_output=True, text=True).stdout.strip())
-            self.assertEqual(archive.name, "example.template-1.0.0.zip")
+            self.assertEqual(archive.name, "example_template.ovyzip")
             import zipfile
             with zipfile.ZipFile(archive) as packed:
                 self.assertEqual(sorted(packed.namelist()), ["helpers.py", "main.py", "plugin.json"])
@@ -129,7 +130,7 @@ class DependencyManagerTests(unittest.TestCase):
         return manager
 
     def install(self, identity, requirements, module="fakepkg"):
-        source = self.root / f"{identity}.plugin"
+        source = self.root / f"{identity}.ovyplugin"
         source.write_text(plugin_source(identity, requirements, module), encoding="utf-8")
         return self.manager.install(str(source))
 
@@ -142,7 +143,7 @@ class DependencyManagerTests(unittest.TestCase):
         manager.dispatch('{"action": "snapshot"}')
 
     def test_enable_installs_and_then_starts_the_plugin(self):
-        plugin_id = self.install("dep.a", ["fakepkg==1.0"])
+        plugin_id = self.install("dep_a", ["fakepkg==1.0"])
         self.manager.enable(plugin_id)
         snapshot = self.manager.snapshot()
         self.assertTrue(snapshot["plugins"][0]["enabled"])
@@ -155,22 +156,22 @@ class DependencyManagerTests(unittest.TestCase):
         self.assertEqual(self.manager.snapshot()["dependencies"]["packages"], {"fakepkg": "1.0"})
 
     def test_satisfied_requirements_start_without_pip(self):
-        first = self.install("dep.a", ["fakepkg==1.0"])
+        first = self.install("dep_a", ["fakepkg==1.0"])
         self.manager.enable(first)
         self.wait()
-        second = self.install("dep.b", ["fakepkg==1.0"])
+        second = self.install("dep_b", ["fakepkg==1.0"])
         self.manager.enable(second)
         self.assertIn(second, self.manager.loaded)
         self.assertEqual(len(self.pip.calls), 1)
 
     def test_changed_version_waits_for_the_restart(self):
-        first = self.install("dep.a", ["fakepkg==1.0"])
+        first = self.install("dep_a", ["fakepkg==1.0"])
         self.manager.enable(first)
         self.wait()
         # Only enabled plugins take part in the resolution, so the version
         # in use changes, and it can't change in a running process.
         self.manager.disable(first)
-        second = self.install("dep.b", ["fakepkg==2.0"])
+        second = self.install("dep_b", ["fakepkg==2.0"])
         self.manager.enable(second)
         self.wait()
         self.assertNotIn(second, self.manager.loaded)
@@ -188,7 +189,7 @@ class DependencyManagerTests(unittest.TestCase):
 
     def test_pip_failure_disables_the_plugin_with_the_reason(self):
         self.pip.fail = "ResolutionImpossible: conflicting versions"
-        plugin_id = self.install("dep.a", ["fakepkg==1.0"])
+        plugin_id = self.install("dep_a", ["fakepkg==1.0"])
         self.manager.enable(plugin_id)
         self.wait()
         self.assertNotIn(plugin_id, self.manager.loaded)
@@ -201,8 +202,8 @@ class DependencyManagerTests(unittest.TestCase):
             return self.pip(command, environment, log_path)
 
         self.manager.dependencies.runner = slow
-        first = self.install("dep.a", ["fakepkg==1.0"])
-        second = self.install("dep.b", ["fakepkg-two==1.0"], module="fakepkg_two")
+        first = self.install("dep_a", ["fakepkg==1.0"])
+        second = self.install("dep_b", ["fakepkg-two==1.0"], module="fakepkg_two")
         self.manager.enable(first)
         with self.assertRaises(RuntimeError):
             self.manager.enable(second)

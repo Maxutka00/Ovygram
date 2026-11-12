@@ -36,7 +36,7 @@ enum class Location {
 };
 
 struct Item {
-	QString pluginId;
+	QString installationId;
 	Location location = Location::Main;
 	QString text;
 	std::set<QString> kinds; // Chat kinds, empty for all.
@@ -98,7 +98,7 @@ void Clicked(
 		value.insert(u"account_id"_q, QString::number(session->uniqueId()));
 	}
 	state.send(QJsonObject{
-		{ u"plugin_id"_q, i->second.pluginId },
+		{ u"installation_id"_q, i->second.installationId },
 		{ u"type"_q, u"menu_click"_q },
 		{ u"rule_id"_q, ruleId },
 		{ u"value"_q, value },
@@ -208,7 +208,7 @@ void Handle(const QJsonObject &command) {
 	auto &state = Get();
 	if (method == u"ui.menu.add"_q) {
 		auto item = Item{
-			.pluginId = command.value(u"plugin_id"_q).toString(),
+			.installationId = command.value(u"installation_id"_q).toString(),
 			.location = ParseLocation(command.value(u"menu"_q).toString()),
 			.text = command.value(u"text"_q).toString().trimmed(),
 		};
@@ -237,10 +237,10 @@ void Handle(const QJsonObject &command) {
 	}
 }
 
-void RemovePlugin(const QString &pluginId) {
+void RemovePlugin(const QString &installationId) {
 	auto &state = Get();
 	std::erase_if(state.items, [&](const auto &entry) {
-		return entry.second.pluginId == pluginId;
+		return entry.second.installationId == installationId;
 	});
 	std::erase_if(state.order, [&](const QString &id) {
 		return !state.items.contains(id);

@@ -9,7 +9,7 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[3]
-EXAMPLE = ROOT / "tools/ovygram/examples/lifecycle.plugin"
+EXAMPLE = ROOT / "tools/ovygram/examples/lifecycle.ovyplugin"
 sys.path.insert(0, str(ROOT / "Telegram/PluginSDK"))
 from ovygram_runtime import Manager
 
@@ -24,7 +24,7 @@ class PluginRuntimeTests(unittest.TestCase):
     def test_import_does_not_execute_plugin(self):
         manager = Manager(self.profile)
         self.addCleanup(manager.shutdown)
-        source = self.root / "bad.py"
+        source = self.root / "lifecycle.ovyplugin"
         source.write_text(EXAMPLE.read_text(encoding="utf-8") + '\nraise SystemExit("test")\n',
                           encoding="utf-8")
         plugin_id = manager.install(str(source))
@@ -61,10 +61,10 @@ class PluginRuntimeTests(unittest.TestCase):
         self.addCleanup(manager.shutdown)
         plugin_id = manager.install(str(EXAMPLE))
         manager.records[plugin_id]["current"].pop("share_file")
-        archive = self.root / "new.zip"
+        archive = self.root / "lifecycle.ovyzip"
         source = EXAMPLE.read_text(encoding="utf-8").replace("1.0.0", "2.0.0")
         with zipfile.ZipFile(archive, "w") as package:
-            package.writestr("plugin.json", '{"entry":"main.py"}')
+            package.writestr("plugin.json", '{"id": "lifecycle", "entry": "main.py"}')
             package.writestr("main.py", source + "\nfrom .resource import value\n")
             package.writestr("resource.py", "value = 5\n")
         manager.install(str(archive), plugin_id)
@@ -73,9 +73,9 @@ class PluginRuntimeTests(unittest.TestCase):
         current = manager.records[plugin_id]["current"]
         manager.directory(current).joinpath("runtime-private.txt").write_text("local data")
         shared = Path(json.loads(manager.dispatch(json.dumps({
-            "action": "share_file", "plugin_id": plugin_id,
+            "action": "share_file", "installation_id": plugin_id,
         })))["result"])
-        self.assertEqual(shared.suffix, ".zip")
+        self.assertEqual(shared.name, "lifecycle.ovyzip")
         self.assertEqual(shared.read_bytes(), archive.read_bytes())
         manager.rollback(plugin_id)
         self.assertEqual(manager.snapshot()["plugins"][0]["version"], "1.0.0")
@@ -92,9 +92,9 @@ class PluginRuntimeTests(unittest.TestCase):
         self.addCleanup(manager.shutdown)
         for path in ("../escape", "c:/escape", "aux.txt", "a\\escape"):
             with self.subTest(path=path):
-                archive = self.root / "bad.zip"
+                archive = self.root / "lifecycle.ovyzip"
                 with zipfile.ZipFile(archive, "w") as package:
-                    package.writestr("plugin.json", '{"entry":"main.py"}')
+                    package.writestr("plugin.json", '{"id": "lifecycle", "entry": "main.py"}')
                     package.write(EXAMPLE, "main.py")
                     package.writestr(path.replace("\\", "/"), "bad")
                 if "\\" in path:
@@ -108,7 +108,6 @@ class PluginRuntimeTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("OVYGRAM_SMOKE_EXE"), "native host not staged")
     def test_embedded_host_loads_and_restarts(self):
         executable = Path(os.environ["OVYGRAM_SMOKE_EXE"])
-        plugin_id = "desktop.lifecycle"
 
         def run(*requests, disabled=False):
             result = subprocess.run(
@@ -123,9 +122,9 @@ class PluginRuntimeTests(unittest.TestCase):
             self.assertTrue(all("result" in response for response in responses), responses)
             return [response["result"] for response in responses]
 
+        installation_id = run({"action": "install", "path": str(EXAMPLE)})[0]
         first = run(
-            {"action": "install", "path": str(EXAMPLE)},
-            {"action": "enable", "plugin_id": plugin_id},
+            {"action": "enable", "installation_id": installation_id},
             {"action": "snapshot"},
         )
         self.assertTrue(first[-1]["plugins"][0]["loaded"])
@@ -133,4 +132,96 @@ class PluginRuntimeTests(unittest.TestCase):
         self.assertFalse(run({"action": "snapshot"}, disabled=True)[0]["plugins"][0]["loaded"])
         self.assertTrue(run({"action": "snapshot"})[0]["plugins"][0]["loaded"])
         state = json.loads(self.profile.joinpath("state.json").read_text(encoding="utf-8"))
-        self.assertEqual(state[plugin_id]["settings"]["load_count"], 2)
+        self.assertEqual(state["installations"][installation_id]["settings"]["load_count"], 2)
+
+
+class InstallationTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.profile = self.root / "profile"
+        self.manager = Manager(self.profile)
+        self.addCleanup(self.manager.shutdown)
+        self.manager.runtime.sender = lambda command: None
+
+    def copy(self, name="lifecycle.ovyplugin", version=None):
+        source = self.root / "files" / name
+        source.parent.mkdir(exist_ok=True)
+        text = EXAMPLE.read_text(encoding="utf-8")
+        source.write_text(text.replace('"1.0.0"', repr(version).replace("'", '"')) if version else text,
+                          encoding="utf-8")
+        return source
+
+    def test_inspect_does_not_install(self):
+        info = self.manager.inspect(str(self.copy()))
+        self.assertEqual(info["metadata"]["id"], "lifecycle")
+        self.assertEqual(info["package_type"], "ovyplugin")
+        self.assertEqual(len(info["sha256"]), 64)
+        self.assertEqual(info["installations"], [])
+        self.assertEqual(self.manager.records, {})
+
+    def test_two_installations_of_one_id_are_isolated(self):
+        first = self.manager.install(str(self.copy()))
+        with self.assertRaisesRegex(ValueError, "отдельно"):
+            self.manager.install(str(self.copy()))
+        second = self.manager.install(str(self.copy()), separate=True)
+        self.assertNotEqual(first, second)
+        for installation_id in (first, second):
+            self.manager.enable(installation_id)
+        self.manager.save_settings(first, {"enabled_example": True, "greeting": "первый", "choice": 1})
+        self.assertNotEqual(self.manager.settings(second)[1]["value"], "первый")
+        self.manager.runtime.contexts[first].set("only_first", 1)
+        self.assertNotIn("only_first", self.manager.records[second]["settings"])
+        self.assertEqual({plugin["instances"] for plugin in self.manager.snapshot()["plugins"]}, {2})
+        self.assertEqual(len(self.manager.inspect(str(self.copy()))["installations"]), 2)
+
+    def test_update_keeps_the_installation(self):
+        installation_id = self.manager.install(str(self.copy()))
+        self.manager.enable(installation_id)
+        data = self.profile / "data" / installation_id
+        data.mkdir(parents=True)
+        (data / "notes.txt").write_text("keep")
+        updated = self.manager.install(str(self.copy(version="1.1")), installation_id)
+        self.assertEqual(updated, installation_id)
+        self.assertEqual(self.manager.records[installation_id]["settings"]["load_count"], 1)
+        self.assertTrue((data / "notes.txt").exists())
+        self.assertEqual(self.manager.describe(installation_id)["version"], "1.1")
+        self.manager.remove(installation_id)
+        self.assertFalse(data.exists())
+
+    def test_replaced_files_are_not_loaded(self):
+        installation_id = self.manager.install(str(self.copy()))
+        version = self.manager.records[installation_id]["current"]
+        entry = self.manager.directory(version) / "plugin.py"
+        entry.write_text(entry.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "изменён"):
+            self.manager.enable(installation_id)
+        self.assertNotIn(installation_id, self.manager.loaded)
+
+    def test_legacy_state_is_migrated(self):
+        self.manager.shutdown()
+        legacy = self.root / "legacy"
+        packages = legacy / "packages" / ("a" * 32)
+        packages.mkdir(parents=True)
+        source = EXAMPLE.read_text(encoding="utf-8").replace(
+            '__id__ = "lifecycle"', '__id__ = "desktop.lifecycle"').replace("__release__ = False\n", "")
+        (packages / "plugin.py").write_text(source, encoding="utf-8")
+        (legacy / "data" / "desktop.lifecycle").mkdir(parents=True)
+        (legacy / "data" / "desktop.lifecycle" / "notes.txt").write_text("keep")
+        from ovygram_runtime import legacy_metadata
+        metadata = legacy_metadata(source.encode(), "plugin.py")
+        (legacy / "state.json").write_text(json.dumps({"desktop.lifecycle": {
+            "current": {"directory": "a" * 32, "metadata": metadata, "entry": "plugin.py"},
+            "previous": None, "enabled": True, "settings": {"load_count": 5},
+        }}), encoding="utf-8")
+        manager = Manager(legacy)
+        self.addCleanup(manager.shutdown)
+        manager.runtime.sender = lambda command: None
+        [(installation_id, record)] = manager.records.items()
+        self.assertEqual(record["plugin_id"], "desktop.lifecycle")
+        self.assertIn(installation_id, manager.loaded, manager.errors)
+        self.assertEqual(record["settings"]["load_count"], 6)
+        self.assertTrue((legacy / "data" / installation_id / "notes.txt").exists())
+        state = json.loads((legacy / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(list(state["installations"]), [installation_id])

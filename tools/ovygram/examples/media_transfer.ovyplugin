@@ -6,9 +6,10 @@ from desktop.media import download_file, send_file
 from file_utils import get_plugin_data_dir
 from hook_utils import CANCEL, HookResult
 
-__id__ = "desktop.media_transfer"
+__id__ = "media_transfer"
 __name__ = "Проверка файлов в Избранном"
 __version__ = "1.0.1"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "В Избранном команда /plugin-file полный_путь отправляет файл, /plugin-download в подписи скачивает вложение."
 __platform__ = "desktop"

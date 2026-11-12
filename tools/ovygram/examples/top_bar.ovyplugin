@@ -2,9 +2,10 @@ from base_plugin import BasePlugin
 from desktop import ui
 from ui.settings import Switch
 
-__id__ = "desktop.top_bar"
+__id__ = "top_bar"
 __name__ = "Верхняя панель чата"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "Скрывает кнопку звонка, перехватывает поиск и перекрашивает фон."
 __platform__ = "desktop"

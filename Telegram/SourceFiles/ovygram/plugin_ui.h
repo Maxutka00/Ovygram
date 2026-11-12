@@ -57,7 +57,7 @@ private:
 	void show(const QJsonObject &command);
 	void update(const QJsonObject &command);
 	void close(const QString &objectId, bool notify);
-	void closePlugin(const QString &pluginId);
+	void closePlugin(const QString &installationId);
 	void destroyed(const QString &objectId);
 	void relayoutChats();
 	void relayoutChatsNow();

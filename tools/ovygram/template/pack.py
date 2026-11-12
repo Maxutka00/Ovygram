@@ -1,4 +1,5 @@
-"""Packs the plugin into dist/<id>-<version>.zip for «Импортировать плагин».
+"""Packs the plugin into dist/<id>.ovyzip for «Импортировать плагин» and for
+the review bot, which needs the file named by the plugin ID.
 
 Run from this directory: python pack.py
 """
@@ -17,15 +18,15 @@ def metadata(entry):
     for node in ast.parse(entry.read_text(encoding="utf-8")).body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id in ("__id__", "__version__"):
+                if isinstance(target, ast.Name) and target.id == "__id__":
                     values[target.id] = ast.literal_eval(node.value)
-    return values["__id__"], values["__version__"]
+    return values["__id__"].lower()
 
 
 def main():
     entry = ROOT / json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["entry"]
-    identity, version = metadata(entry)
-    target = ROOT / "dist" / f"{identity}-{version}.zip"
+    identity = metadata(entry)
+    target = ROOT / "dist" / f"{identity}.ovyzip"
     target.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(ROOT.rglob("*")):

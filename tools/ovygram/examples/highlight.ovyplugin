@@ -3,9 +3,10 @@ from desktop import client, ui
 from desktop_utils import run_on_ui
 from ui.settings import Input
 
-__id__ = "desktop.highlight"
+__id__ = "highlight"
 __name__ = "Подсветка и скрытие чатов"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Подсвечивает сообщения с ключевым словом, а Ctrl+Alt+H скрывает "
                    "открытый чат из списка или возвращает его.")

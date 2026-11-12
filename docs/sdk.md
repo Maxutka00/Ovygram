@@ -21,7 +21,7 @@ class ExamplePlugin(BasePlugin):
             self.log(f"Аккаунт {account.id}, pts={state.pts}")
 ```
 
-Добавь обязательные метаданные из [примера аккаунтов](../tools/ovygram/examples/account_events.plugin).
+Добавь обязательные метаданные из [примера аккаунтов](../tools/ovygram/examples/account_events.ovyplugin).
 Для новых API укажи `__desktop_sdk__ = 2`. Плагины SDK 1 продолжают
 поддерживаться. Ранее выпущенный клиент с SDK 1 отклонит импорт SDK 2.
 Плагин после импорта включается вручную. Вызовы идут через существующие сессии
@@ -204,7 +204,9 @@ async def background(self):
 Запись настроек выполняется на главном потоке. `get_account_setting` и
 `set_account_setting` хранят значения раздельно по аккаунтам и сохраняют их
 при обновлении и откате плагина. `file_utils.get_plugin_data_dir(account_id)`
-возвращает отдельный каталог данных аккаунта.
+возвращает отдельный каталог данных аккаунта. Настройки и каталоги данных
+принадлежат экземпляру плагина (`installation_id`): два установленных
+экземпляра с одним `__id__` их не делят.
 
 Для кода внутри одного процесса отмена является кооперативной. Плагин с
 бесконечным циклом или зависшей нативной библиотекой может потребовать перезапуска.
@@ -224,10 +226,10 @@ async def background(self):
 
 ## Примеры и проверка
 
-- [Обработка текста и отмена](../tools/ovygram/examples/text_hooks.plugin).
-- [Перехват запроса истории и ответа](../tools/ovygram/examples/rpc_hooks.plugin).
-- [Аккаунты и события](../tools/ovygram/examples/account_events.plugin).
-- [Файлы и прогресс в Избранном](../tools/ovygram/examples/media_transfer.plugin).
+- [Обработка текста и отмена](../tools/ovygram/examples/text_hooks.ovyplugin).
+- [Перехват запроса истории и ответа](../tools/ovygram/examples/rpc_hooks.ovyplugin).
+- [Аккаунты и события](../tools/ovygram/examples/account_events.ovyplugin).
+- [Файлы и прогресс в Избранном](../tools/ovygram/examples/media_transfer.ovyplugin).
 
 После будущей сборки проверяются несколько аккаунтов, фоновый аккаунт при
 переключении окна, выход во время запроса, отмена передачи, сбой сети,

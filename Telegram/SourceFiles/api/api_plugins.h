@@ -48,7 +48,7 @@ private:
 	struct Pending {
 		base::weak_ptr<Main::Session> session;
 		QString accountId;
-		QString pluginId;
+		QString installationId;
 		mtpRequestId requestId = 0;
 		QJsonArray hookStack;
 	};

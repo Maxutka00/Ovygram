@@ -1,9 +1,10 @@
 from base_plugin import BasePlugin
 from hook_utils import MODIFY, HookResult
 
-__id__ = "desktop.rpc_hooks"
+__id__ = "rpc_hooks"
 __name__ = "Перехват истории"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "Ограничивает один запрос истории двадцатью сообщениями и отмечает ответы в журнале."
 __platform__ = "desktop"

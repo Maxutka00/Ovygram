@@ -7,6 +7,7 @@
 #include "mainwidget.h"
 #include "settings/settings_common_session.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/layers/generic_box.h"
 #include "ui/painter.h"
 #include "ui/search_field_controller.h"
 #include "ui/vertical_list.h"
@@ -17,6 +18,7 @@
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
+#include "styles/style_boxes.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
 
@@ -34,6 +36,8 @@ namespace {
 
 // How often a page refreshes while plugin libraries are installed.
 constexpr auto kDependencyPoll = crl::time(1500);
+// .ovyplugin and .ovyzip are the plugin formats; the rest import locally.
+const auto kPluginFilter = u"Плагины (*.ovyplugin *.ovyzip *.py *.plugin *.zip)"_q;
 
 [[nodiscard]] QJsonValue Request(
 		QJsonObject request,
@@ -144,9 +148,16 @@ void AddNotice(
 }
 
 [[nodiscard]] QString PluginMetadata(const QJsonObject &plugin) {
-	return u"Версия %1 · %2"_q.arg(
+	auto result = u"Версия %1 · %2 · %3"_q.arg(
 		plugin.value(u"version"_q).toString().simplified(),
-		plugin.value(u"author"_q).toString().simplified());
+		plugin.value(u"author"_q).toString().simplified(),
+		plugin.value(u"plugin_id"_q).toString());
+	// Installations of one plugin ID differ by their installation_id.
+	if (plugin.value(u"instances"_q).toInt() > 1) {
+		result += u" · экземпляр %1"_q.arg(
+			plugin.value(u"installation_id"_q).toString().left(8));
+	}
+	return result;
 }
 
 [[nodiscard]] QString DescriptionPreview(const QString &description) {
@@ -259,7 +270,7 @@ void ConfirmRemove(
 		not_null<Window::SessionController*> controller,
 		Fn<void()> remove) {
 	controller->show(Ui::MakeConfirmBox({
-		.text = rpl::single(u"Удалить этот плагин и его настройки?"_q),
+		.text = rpl::single(u"Удалить этот плагин, его настройки и данные?"_q),
 		.confirmed = [=](Fn<void()> close) {
 			close();
 			remove();
@@ -275,7 +286,7 @@ void SharePlugin(
 		rpl::variable<QString> &notice) {
 	const auto path = Request({
 		{ u"action"_q, u"share_file"_q },
-		{ u"plugin_id"_q, id },
+		{ u"installation_id"_q, id },
 	}, notice).toString();
 	if (!path.isEmpty()) {
 		notice = QString();
@@ -283,18 +294,63 @@ void SharePlugin(
 	}
 }
 
+[[nodiscard]] QString PluginLine(const QJsonObject &plugin) {
+	return u"%1 %2 · %3"_q.arg(
+		plugin.value(u"name"_q).toString().simplified(),
+		plugin.value(u"version"_q).toString().simplified(),
+		plugin.value(u"author"_q).toString().simplified());
+}
+
+// A file whose plugin ID is already installed: update an installation,
+// install it separately with its own settings, or cancel (spec §12.2).
+void SamePluginBox(
+		not_null<Ui::GenericBox*> box,
+		QJsonObject info,
+		Fn<void(QString installationId, bool separate)> done) {
+	const auto metadata = info.value(u"metadata"_q).toObject();
+	const auto installations = info.value(u"installations"_q).toArray();
+	box->setTitle(rpl::single(u"Плагин уже установлен"_q));
+	auto text = u"Новый файл: %1\nID: %2\n\nУстановлено:"_q.arg(
+		PluginLine(metadata),
+		metadata.value(u"id"_q).toString());
+	for (const auto &entry : installations) {
+		text += u"\n• "_q + PluginLine(entry.toObject());
+	}
+	if (installations.size() > 1) {
+		text += u"\n\nЧтобы обновить один из экземпляров, откройте его страницу "
+			"и нажмите «Обновить из файла»."_q;
+	}
+	box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		rpl::single(text),
+		st::boxLabel));
+	if (installations.size() == 1) {
+		const auto id = installations.first().toObject().value(
+			u"installation_id"_q).toString();
+		box->addButton(rpl::single(u"Обновить"_q), [=] {
+			box->closeBox();
+			done(id, false);
+		});
+	}
+	box->addButton(rpl::single(u"Установить отдельно"_q), [=] {
+		box->closeBox();
+		done(QString(), true);
+	});
+	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+}
+
 class PluginDetails final : public AbstractSection {
 public:
 	PluginDetails(
 		QWidget *parent,
 		not_null<Window::SessionController*> controller,
-		QString pluginId,
+		QString installationId,
 		QString name);
 
 	[[nodiscard]] Type id() const override;
 	[[nodiscard]] rpl::producer<QString> title() override;
 	[[nodiscard]] rpl::producer<> sectionShowBack() override;
-	[[nodiscard]] static Type Id(QString pluginId, QString name);
+	[[nodiscard]] static Type Id(QString installationId, QString name);
 
 private:
 	void refresh();
@@ -303,7 +359,7 @@ private:
 	void addSettings(const QJsonArray &fields);
 	void pollWhileInstalling(const QJsonObject &snapshot);
 
-	const QString _pluginId;
+	const QString _installationId;
 	const QString _name;
 	const not_null<Ui::VerticalLayout*> _content;
 	rpl::variable<QString> _notice;
@@ -312,8 +368,8 @@ private:
 };
 
 struct DetailsFactory final : AbstractSectionFactory {
-	DetailsFactory(QString pluginId, QString name)
-	: pluginId(std::move(pluginId)), name(std::move(name)) {
+	DetailsFactory(QString installationId, QString name)
+	: installationId(std::move(installationId)), name(std::move(name)) {
 	}
 
 	object_ptr<AbstractSection> create(
@@ -321,20 +377,20 @@ struct DetailsFactory final : AbstractSectionFactory {
 			not_null<Window::SessionController*> controller,
 			not_null<Ui::ScrollArea*> scroll,
 			rpl::producer<Container> containerValue) const override {
-		return object_ptr<PluginDetails>(parent, controller, pluginId, name);
+		return object_ptr<PluginDetails>(parent, controller, installationId, name);
 	}
 
-	const QString pluginId;
+	const QString installationId;
 	const QString name;
 };
 
 PluginDetails::PluginDetails(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller,
-	QString pluginId,
+	QString installationId,
 	QString name)
 : AbstractSection(parent, controller)
-, _pluginId(std::move(pluginId))
+, _installationId(std::move(installationId))
 , _name(std::move(name))
 , _content(Ui::CreateChild<Ui::VerticalLayout>(this)) {
 	setNavigationAnchor(_content);
@@ -342,12 +398,12 @@ PluginDetails::PluginDetails(
 	refresh();
 }
 
-Type PluginDetails::Id(QString pluginId, QString name) {
-	return std::make_shared<DetailsFactory>(std::move(pluginId), std::move(name));
+Type PluginDetails::Id(QString installationId, QString name) {
+	return std::make_shared<DetailsFactory>(std::move(installationId), std::move(name));
 }
 
 Type PluginDetails::id() const {
-	return Id(_pluginId, _name);
+	return Id(_installationId, _name);
 }
 
 rpl::producer<QString> PluginDetails::title() {
@@ -371,7 +427,7 @@ void PluginDetails::refresh() {
 	auto plugin = QJsonObject();
 	for (const auto &entry : entries) {
 		const auto object = entry.toObject();
-		if (object.value(u"id"_q).toString() == _pluginId) {
+		if (object.value(u"installation_id"_q).toString() == _installationId) {
 			plugin = object;
 			break;
 		}
@@ -390,7 +446,6 @@ void PluginDetails::refresh() {
 		});
 	AddCardLabel(card, PluginMetadata(plugin), st::settingsPluginCardMeta);
 	AddCardLabel(card, plugin.value(u"description"_q).toString());
-	AddCardLabel(card, _pluginId, st::settingsPluginCardMeta);
 	if (const auto line = DependencyLine(plugin); !line.isEmpty()) {
 		AddCardLabel(card, line, st::settingsPluginCardMeta);
 	}
@@ -408,7 +463,7 @@ void PluginDetails::refresh() {
 	if (plugin.value(u"loaded"_q).toBool()) {
 		const auto fields = Request({
 			{ u"action"_q, u"settings"_q },
-			{ u"plugin_id"_q, _pluginId },
+			{ u"installation_id"_q, _installationId },
 		}, _notice);
 		if (fields.isArray() && !fields.toArray().isEmpty()) {
 			addSettings(fields.toArray());
@@ -425,7 +480,7 @@ void PluginDetails::refresh() {
 	}
 	AddCardActions(
 		AddCard(_content),
-		[this] { SharePlugin(controller(), _pluginId, _notice); },
+		[this] { SharePlugin(controller(), _installationId, _notice); },
 		[this] {
 			ConfirmRemove(controller(), crl::guard(this, [this] {
 				operate(u"remove"_q);
@@ -447,7 +502,7 @@ void PluginDetails::pollWhileInstalling(const QJsonObject &snapshot) {
 void PluginDetails::operate(const QString &action) {
 	const auto result = Request({
 		{ u"action"_q, action },
-		{ u"plugin_id"_q, _pluginId },
+		{ u"installation_id"_q, _installationId },
 	}, _notice);
 	const auto succeeded = !result.isUndefined();
 	QTimer::singleShot(0, this, [=, this] {
@@ -466,12 +521,12 @@ void PluginDetails::installUpdate() {
 	FileDialog::GetOpenPath(
 		this,
 		u"Выбрать файл плагина"_q,
-		u"Плагины (*.py *.plugin *.zip)"_q,
+		kPluginFilter,
 		crl::guard(this, [this](const FileDialog::OpenResult &files) {
 			if (!files.paths.isEmpty() && !Request({
 				{ u"action"_q, u"install"_q },
 				{ u"path"_q, files.paths.front() },
-				{ u"plugin_id"_q, _pluginId },
+				{ u"installation_id"_q, _installationId },
 			}, _notice).isUndefined()) {
 				_notice = QString();
 				refresh();
@@ -534,7 +589,7 @@ void PluginDetails::addSettings(const QJsonArray &fields) {
 		}
 		if (!Request({
 			{ u"action"_q, u"save_settings"_q },
-			{ u"plugin_id"_q, _pluginId },
+			{ u"installation_id"_q, _installationId },
 			{ u"values"_q, object },
 		}, _notice).isUndefined()) {
 			_notice = u"Настройки сохранены."_q;
@@ -553,6 +608,10 @@ private:
 	void refresh();
 	void populate();
 	void install();
+	void installFile(
+		const QString &path,
+		const QString &installationId,
+		bool separate);
 	void operate(const QString &id, const QString &action);
 
 	std::unique_ptr<Ui::SearchFieldController> _search;
@@ -637,10 +696,11 @@ void Plugins::populate() {
 	for (const auto &entry : entries) {
 		const auto plugin = entry.toObject();
 		const auto name = plugin.value(u"name"_q).toString();
-		const auto id = plugin.value(u"id"_q).toString();
+		const auto id = plugin.value(u"installation_id"_q).toString();
+		const auto pluginId = plugin.value(u"plugin_id"_q).toString();
 		const auto author = plugin.value(u"author"_q).toString();
 		if (!name.contains(_query, Qt::CaseInsensitive)
-			&& !id.contains(_query, Qt::CaseInsensitive)
+			&& !pluginId.contains(_query, Qt::CaseInsensitive)
 			&& !author.contains(_query, Qt::CaseInsensitive)) {
 			continue;
 		}
@@ -689,7 +749,7 @@ void Plugins::operate(const QString &id, const QString &action) {
 	_notice = QString();
 	(void)Request({
 		{ u"action"_q, action },
-		{ u"plugin_id"_q, id },
+		{ u"installation_id"_q, id },
 	}, _notice);
 	QTimer::singleShot(0, this, [this] { refresh(); });
 }
@@ -698,16 +758,50 @@ void Plugins::install() {
 	FileDialog::GetOpenPath(
 		this,
 		u"Выбрать файл плагина"_q,
-		u"Плагины (*.py *.plugin *.zip)"_q,
+		kPluginFilter,
 		crl::guard(this, [this](const FileDialog::OpenResult &files) {
-			if (!files.paths.isEmpty() && !Request({
-				{ u"action"_q, u"install"_q },
-				{ u"path"_q, files.paths.front() },
-			}, _notice).isUndefined()) {
-				_notice = u"Плагин импортирован. Он выключен."_q;
-				refresh();
+			if (files.paths.isEmpty()) {
+				return;
 			}
+			const auto path = files.paths.front();
+			const auto info = Request({
+				{ u"action"_q, u"inspect"_q },
+				{ u"path"_q, path },
+			}, _notice).toObject();
+			if (info.isEmpty()) {
+				return;
+			}
+			if (info.value(u"installations"_q).toArray().isEmpty()) {
+				installFile(path, QString(), false);
+				return;
+			}
+			controller()->show(Box(
+				SamePluginBox,
+				info,
+				crl::guard(this, [=](QString installationId, bool separate) {
+					installFile(path, installationId, separate);
+				})));
 		}));
+}
+
+void Plugins::installFile(
+		const QString &path,
+		const QString &installationId,
+		bool separate) {
+	auto request = QJsonObject{
+		{ u"action"_q, u"install"_q },
+		{ u"path"_q, path },
+		{ u"separate"_q, separate },
+	};
+	if (!installationId.isEmpty()) {
+		request.insert(u"installation_id"_q, installationId);
+	}
+	if (!Request(request, _notice).isUndefined()) {
+		_notice = installationId.isEmpty()
+			? u"Плагин импортирован. Он выключен."_q
+			: u"Плагин обновлён. Он выключен."_q;
+		refresh();
+	}
 }
 
 } // namespace

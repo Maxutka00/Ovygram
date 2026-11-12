@@ -2,9 +2,10 @@ from base_plugin import BasePlugin
 from desktop import client, ui
 from desktop_utils import run_on_ui
 
-__id__ = "desktop.chat_bar"
+__id__ = "chat_bar"
 __name__ = "Полоса в чате"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "Полоса над сообщениями открытого чата со счётчиком и кнопками."
 __platform__ = "desktop"

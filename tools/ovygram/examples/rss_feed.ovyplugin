@@ -18,9 +18,10 @@ from desktop_utils import run_in_background, set_timer
 from file_utils import get_plugin_data_dir
 from ui.settings import Input, Selector
 
-__id__ = "desktop.rss_feed"
+__id__ = "rss_feed"
 __name__ = "RSS в Избранное"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Проверяет RSS или Atom ленту и отправляет новые записи в Избранное "
                    "активного аккаунта.")

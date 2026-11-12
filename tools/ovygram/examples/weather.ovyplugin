@@ -15,9 +15,10 @@ from desktop import client, ui
 from desktop_utils import run_in_background
 from hook_utils import CANCEL, HookResult
 
-__id__ = "desktop.weather"
+__id__ = "weather"
 __name__ = "Погода"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Команда «/погода Город» (или /weather) отправляет в чат текущую погоду "
                    "по данным Open-Meteo. Пример плагина с библиотекой requests.")

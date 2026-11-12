@@ -41,7 +41,7 @@ struct Selector {
 };
 
 struct Rule {
-	QString pluginId;
+	QString installationId;
 	Selector selector;
 	QString action; // "hide" or "click".
 	bool replace = false;
@@ -49,7 +49,7 @@ struct Rule {
 };
 
 struct KeyRule {
-	QString pluginId;
+	QString installationId;
 	QKeySequence sequence;
 	QString element; // Only while the focus is inside this element.
 	bool replace = false;
@@ -250,10 +250,10 @@ void EnsureFilter() {
 	}
 }
 
-void Send(const QString &pluginId, const QString &type, const QString &ruleId) {
+void Send(const QString &installationId, const QString &type, const QString &ruleId) {
 	if (const auto &send = Get().send) {
 		send(QJsonObject{
-			{ u"plugin_id"_q, pluginId },
+			{ u"installation_id"_q, installationId },
 			{ u"type"_q, type },
 			{ u"rule_id"_q, ruleId },
 		});
@@ -284,7 +284,7 @@ void Send(const QString &pluginId, const QString &type, const QString &ruleId) {
 		if (rule.sequence.matches(pressed) == QKeySequence::ExactMatch
 			&& InsideElement(watched, rule.element)) {
 			replace = replace || rule.replace;
-			result.emplace_back(rule.pluginId, id);
+			result.emplace_back(rule.installationId, id);
 		}
 	}
 	return result;
@@ -329,13 +329,13 @@ bool Filter::eventFilter(QObject *watched, QEvent *e) {
 		for (const auto &[id, rule] : state.rules) {
 			if (rule.action == u"click"_q && Matches(widget, rule.selector)) {
 				replace = replace || rule.replace;
-				matched.emplace_back(rule.pluginId, id);
+				matched.emplace_back(rule.installationId, id);
 			}
 		}
 		if (type == QEvent::MouseButtonRelease
 			&& widget->rect().contains(mouse->position().toPoint())) {
-			for (const auto &[pluginId, id] : matched) {
-				Send(pluginId, u"widget_click"_q, id);
+			for (const auto &[installationId, id] : matched) {
+				Send(installationId, u"widget_click"_q, id);
 			}
 		}
 		return replace;
@@ -360,8 +360,8 @@ bool Filter::eventFilter(QObject *watched, QEvent *e) {
 		auto replace = false;
 		const auto matched = MatchingKeys(watched, key, replace);
 		if (!matched.empty()) {
-			for (const auto &[pluginId, id] : matched) {
-				Send(pluginId, u"key"_q, id);
+			for (const auto &[installationId, id] : matched) {
+				Send(installationId, u"key"_q, id);
 			}
 			// Delivered to every widget on the way, so report it once.
 			return replace;
@@ -470,7 +470,7 @@ void SetEventSender(std::function<void(QJsonObject)> send) {
 
 void Handle(const QJsonObject &command) {
 	const auto method = command.value(u"method"_q).toString();
-	const auto pluginId = command.value(u"plugin_id"_q).toString();
+	const auto installationId = command.value(u"installation_id"_q).toString();
 	const auto ruleId = command.value(u"rule_id"_q).toString();
 	auto &state = Get();
 	if (method == u"ui.widgets.rule"_q) {
@@ -479,7 +479,7 @@ void Handle(const QJsonObject &command) {
 			throw std::runtime_error("Invalid widget rule.");
 		}
 		auto rule = Rule{
-			.pluginId = pluginId,
+			.installationId = installationId,
 			.selector = ParseSelector(command.value(u"selector"_q).toObject()),
 			.action = action,
 			.replace = command.value(u"replace"_q).toBool(),
@@ -511,7 +511,7 @@ void Handle(const QJsonObject &command) {
 			throw std::runtime_error("Invalid key sequence, use e.g. Ctrl+Shift+K.");
 		}
 		state.keys[ruleId] = KeyRule{
-			.pluginId = pluginId,
+			.installationId = installationId,
 			.sequence = sequence,
 			.element = command.value(u"element"_q).toString(),
 			.replace = command.value(u"replace"_q).toBool(),
@@ -571,11 +571,11 @@ QJsonValue Request(const QJsonObject &command) {
 	throw std::runtime_error("Unknown widgets request.");
 }
 
-void RemovePlugin(const QString &pluginId) {
+void RemovePlugin(const QString &installationId) {
 	auto &state = Get();
 	auto hidden = std::vector<QPointer<QWidget>>();
 	std::erase_if(state.rules, [&](auto &entry) {
-		if (entry.second.pluginId != pluginId) {
+		if (entry.second.installationId != installationId) {
 			return false;
 		}
 		for (auto &widget : entry.second.hidden) {
@@ -584,7 +584,7 @@ void RemovePlugin(const QString &pluginId) {
 		return true;
 	});
 	std::erase_if(state.keys, [&](const auto &entry) {
-		return entry.second.pluginId == pluginId;
+		return entry.second.installationId == installationId;
 	});
 	Restore(std::move(hidden));
 }

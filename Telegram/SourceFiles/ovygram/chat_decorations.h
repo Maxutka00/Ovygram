@@ -16,7 +16,7 @@ namespace Decorations {
 
 // "ui.decoration.set" and "ui.decoration.remove" commands.
 void Handle(const QJsonObject &command);
-void RemovePlugin(const QString &pluginId);
+void RemovePlugin(const QString &installationId);
 
 } // namespace Decorations
 } // namespace Ovygram

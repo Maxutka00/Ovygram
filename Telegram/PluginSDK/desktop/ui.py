@@ -313,14 +313,14 @@ class Element:
             raise TypeError("callback должен быть функцией.")
         runtime = self.owner.manager.runtime
         with runtime.lock:
-            runtime.element_handlers[(self.owner.plugin_id, self.name)] = callback
+            runtime.element_handlers[(self.owner.installation_id, self.name)] = callback
         runtime.submit_ui(self.owner, "ui.element.click", element=self.name,
                           enabled=True, replace=bool(replace))
 
     def off_click(self):
         runtime = self.owner.manager.runtime
         with runtime.lock:
-            runtime.element_handlers.pop((self.owner.plugin_id, self.name), None)
+            runtime.element_handlers.pop((self.owner.installation_id, self.name), None)
         runtime.submit_ui(self.owner, "ui.element.click", element=self.name, enabled=False)
 
 

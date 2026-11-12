@@ -324,7 +324,7 @@ void PluginClient::receive(const QByteArray &request) {
 				dispatch({
 					{ u"action"_q, u"ui_event"_q },
 					{ u"event"_q, QJsonObject{
-						{ u"plugin_id"_q, command.value(u"plugin_id"_q) },
+						{ u"installation_id"_q, command.value(u"installation_id"_q) },
 						{ u"object_id"_q, command.value(u"object_id"_q) },
 						{ u"type"_q, u"error"_q },
 						{ u"value"_q, QString::fromUtf8(error.what()) },
@@ -337,7 +337,7 @@ void PluginClient::receive(const QByteArray &request) {
 		if (method == u"cancel"_q) {
 			const auto pending = _pending.find(id);
 			if (pending != _pending.end()
-				&& pending->second.pluginId == command.value(u"plugin_id"_q).toString()) {
+				&& pending->second.installationId == command.value(u"installation_id"_q).toString()) {
 				cancel(id);
 			}
 			return;
@@ -345,7 +345,7 @@ void PluginClient::receive(const QByteArray &request) {
 		if (!dispatch({
 				{ u"action"_q, u"client_pending"_q },
 				{ u"request_id"_q, id },
-				{ u"plugin_id"_q, command.value(u"plugin_id"_q) },
+				{ u"installation_id"_q, command.value(u"installation_id"_q) },
 			}).toBool()) {
 			return;
 		}
@@ -451,7 +451,7 @@ void PluginClient::rpc(const QJsonObject &command, not_null<Main::Session*> owne
 	_pending.emplace(id, Pending{
 		base::make_weak(owner.get()),
 		AccountId(*owner),
-		command.value(u"plugin_id"_q).toString(),
+		command.value(u"installation_id"_q).toString(),
 		requestId,
 		command.value(u"hook_stack"_q).toArray(),
 	});

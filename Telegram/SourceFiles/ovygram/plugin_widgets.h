@@ -21,7 +21,7 @@ void Handle(const QJsonObject &command);
 // Requests with a reply: "widgets.tree" and "widgets.get".
 [[nodiscard]] QJsonValue Request(const QJsonObject &command);
 
-void RemovePlugin(const QString &pluginId);
+void RemovePlugin(const QString &installationId);
 
 // The widget behind a handle from widgets.tree, or nullptr if it is gone.
 [[nodiscard]] QWidget *Resolve(const QJsonValue &handle);

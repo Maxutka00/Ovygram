@@ -88,7 +88,7 @@ class UpdateContext:
 @dataclass
 class Registration:
     runtime: object
-    plugin_id: str
+    installation_id: str
     point: str
     callback: object
     priority: int
@@ -134,7 +134,7 @@ class Runtime:
             _current.reset(token)
             elapsed = time.monotonic() - started
             if elapsed >= 0.1:
-                self.manager.logger.warning("%s: %s %.3f s", plugin_context.plugin_id,
+                self.manager.logger.warning("%s: %s %.3f s", plugin_context.installation_id,
                                             getattr(method, "__name__", "handler"), elapsed)
 
     def register(self, plugin_context, point, callback, priority=0, request=None):
@@ -143,7 +143,7 @@ class Runtime:
         if point not in POINT_BITS or type(priority) is not int:
             raise ValueError("Неизвестное событие или некорректный приоритет.")
         self.sequence += 1
-        registration = Registration(self, plugin_context.plugin_id, point, callback,
+        registration = Registration(self, plugin_context.installation_id, point, callback,
                                     priority, self.sequence, request)
         self.registrations.append(registration)
         self.refresh_mask()
@@ -158,7 +158,12 @@ class Runtime:
 
     def handlers(self, point):
         return sorted((entry for entry in self.registrations if entry.active and entry.point == point),
-                      key=lambda entry: (-entry.priority, entry.plugin_id, entry.sequence))
+                      key=lambda entry: (-entry.priority, self.plugin_id_of(entry.installation_id),
+                                         entry.installation_id, entry.sequence))
+
+    def plugin_id_of(self, installation_id):
+        owner = self.contexts.get(installation_id)
+        return owner.plugin_id if owner is not None else ""
 
     def hooks(self, point, value, validate, inherited=()):
         original = copy.deepcopy(value)
@@ -166,13 +171,13 @@ class Runtime:
         modified = False
         stack = (*_hook_stack.get(), *inherited)
         for handler in self.handlers(point):
-            owner = self.contexts.get(handler.plugin_id)
-            if not handler.active or owner is None or not owner.active or handler.plugin_id in stack:
+            owner = self.contexts.get(handler.installation_id)
+            if not handler.active or owner is None or not owner.active or handler.installation_id in stack:
                 continue
             request = getattr(current, "request", None)
             if handler.request and (request is None or request.constructor_name != handler.request):
                 continue
-            token = _hook_stack.set((*stack, handler.plugin_id))
+            token = _hook_stack.set((*stack, handler.installation_id))
             try:
                 result = self.call(owner, handler.callback, copy.deepcopy(current))
                 if inspect.isawaitable(result):
@@ -195,10 +200,10 @@ class Runtime:
                     break
             except BaseException as error:
                 if not isinstance(error, HookCancelled):
-                    self.manager.report_error(handler.plugin_id, str(error))
+                    self.manager.report_error(handler.installation_id, str(error))
                 if isinstance(error, HookError):
                     raise
-                raise HookError(f"Ошибка хука {handler.plugin_id}: {error}") from error
+                raise HookError(f"Ошибка хука {handler.installation_id}: {error}") from error
             finally:
                 _hook_stack.reset(token)
         if modified:
@@ -256,20 +261,20 @@ class Runtime:
             except asyncio.CancelledError:
                 raise
             except BaseException as error:
-                self.manager.report_error(plugin_context.plugin_id, str(error))
+                self.manager.report_error(plugin_context.installation_id, str(error))
                 raise
             finally:
                 _current.reset(token)
 
         future = asyncio.run_coroutine_threadsafe(managed(), loop)
         with self.lock:
-            self.tasks.setdefault(plugin_context.plugin_id, set()).add(future)
-        future.add_done_callback(lambda done: self.task_finished(plugin_context.plugin_id, done))
+            self.tasks.setdefault(plugin_context.installation_id, set()).add(future)
+        future.add_done_callback(lambda done: self.task_finished(plugin_context.installation_id, done))
         return future
 
-    def task_finished(self, plugin_id, future):
+    def task_finished(self, installation_id, future):
         with self.lock:
-            self.tasks.get(plugin_id, set()).discard(future)
+            self.tasks.get(installation_id, set()).discard(future)
 
     def submit(self, command):
         if self.sender is not None:
@@ -290,7 +295,7 @@ class Runtime:
             raise RuntimeError("Мост к клиенту ещё не готов или плагин выгружен.")
         identity = uuid.uuid4().hex
         future = Future()
-        command = {"id": identity, "plugin_id": owner.plugin_id, "method": method,
+        command = {"id": identity, "installation_id": owner.installation_id, "method": method,
                    "account_id": account_id, "hook_stack": list(_hook_stack.get()), **parameters}
         with self.lock:
             self.requests[identity] = (owner, future)
@@ -299,7 +304,7 @@ class Runtime:
             return await asyncio.wrap_future(future)
         except asyncio.CancelledError:
             try:
-                self.submit({"method": "cancel", "id": identity, "plugin_id": owner.plugin_id})
+                self.submit({"method": "cancel", "id": identity, "installation_id": owner.installation_id})
             except RuntimeError:
                 pass
             raise
@@ -307,11 +312,11 @@ class Runtime:
             with self.lock:
                 self.requests.pop(identity, None)
 
-    def is_pending(self, request_id, plugin_id):
+    def is_pending(self, request_id, installation_id):
         with self.lock:
             entry = self.requests.get(request_id)
             return (entry is not None and entry[0].active
-                    and entry[0].plugin_id == plugin_id and not entry[1].done())
+                    and entry[0].installation_id == installation_id and not entry[1].done())
 
     def complete(self, request):
         with self.lock:
@@ -337,7 +342,7 @@ class Runtime:
             if not owner.active:
                 raise RuntimeError("Плагин уже выгружен.")
             self.submit({"id": uuid.uuid4().hex, "method": method,
-                         "plugin_id": owner.plugin_id, **parameters})
+                         "installation_id": owner.installation_id, **parameters})
 
     def add_surface(self, surface):
         with self.lock:
@@ -357,10 +362,10 @@ class Runtime:
             return
         with self.lock:
             surface = self.surfaces.get(event.get("object_id"))
-        if surface is None or surface.owner.plugin_id != event.get("plugin_id"):
-            plugin_id = event.get("plugin_id")
-            if event.get("type") == "error" and plugin_id in self.contexts:
-                self.manager.report_error(plugin_id, str(event.get("value", "")))
+        if surface is None or surface.owner.installation_id != event.get("installation_id"):
+            installation_id = event.get("installation_id")
+            if event.get("type") == "error" and installation_id in self.contexts:
+                self.manager.report_error(installation_id, str(event.get("value", "")))
             return
         owner = surface.owner
         kind = event.get("type")
@@ -369,7 +374,7 @@ class Runtime:
                 with self.lock:
                     self.surfaces.pop(surface.id, None)
                 surface.closed = True
-            self.manager.report_error(owner.plugin_id, str(event.get("value", "")))
+            self.manager.report_error(owner.installation_id, str(event.get("value", "")))
             return
         if kind == "closed":
             with self.lock:
@@ -391,13 +396,13 @@ class Runtime:
             if inspect.iscoroutine(result):
                 self.schedule(owner, result)
         except BaseException as error:
-            self.manager.report_error(owner.plugin_id, str(error) or type(error).__name__)
+            self.manager.report_error(owner.installation_id, str(error) or type(error).__name__)
 
     def element_click(self, event):
-        plugin_id = event.get("plugin_id")
+        installation_id = event.get("installation_id")
         with self.lock:
-            callback = self.element_handlers.get((plugin_id, event.get("element")))
-        owner = self.contexts.get(plugin_id)
+            callback = self.element_handlers.get((installation_id, event.get("element")))
+        owner = self.contexts.get(installation_id)
         if callback is None or owner is None or not owner.active:
             return
         try:
@@ -405,7 +410,7 @@ class Runtime:
             if inspect.iscoroutine(result):
                 self.schedule(owner, result)
         except BaseException as error:
-            self.manager.report_error(plugin_id, str(error) or type(error).__name__)
+            self.manager.report_error(installation_id, str(error) or type(error).__name__)
 
     def widget_rule_event(self, event):
         with self.lock:
@@ -413,7 +418,7 @@ class Runtime:
         if entry is None:
             return
         owner, callback = entry
-        if not owner.active or owner.plugin_id != event.get("plugin_id"):
+        if not owner.active or owner.installation_id != event.get("installation_id"):
             return
         try:
             value = event.get("value")
@@ -421,7 +426,7 @@ class Runtime:
             if inspect.iscoroutine(result):
                 self.schedule(owner, result)
         except BaseException as error:
-            self.manager.report_error(owner.plugin_id, str(error) or type(error).__name__)
+            self.manager.report_error(owner.installation_id, str(error) or type(error).__name__)
 
     def execute_ui(self, call_id):
         with self.lock:
@@ -498,7 +503,7 @@ class Runtime:
             if len(self.seen_messages) > 2048:
                 self.seen_messages.popitem(last=False)
         for handler in self.handlers(point):
-            owner = self.contexts.get(handler.plugin_id)
+            owner = self.contexts.get(handler.installation_id)
             if not handler.active or owner is None or not owner.active:
                 continue
             try:
@@ -506,46 +511,46 @@ class Runtime:
                 if inspect.iscoroutine(result):
                     self.schedule(owner, result)
             except BaseException as error:
-                self.manager.report_error(handler.plugin_id, str(error))
+                self.manager.report_error(handler.installation_id, str(error))
 
-    def remove(self, plugin_id):
+    def remove(self, installation_id):
         for entry in self.registrations:
-            if entry.plugin_id == plugin_id:
+            if entry.installation_id == installation_id:
                 entry.cancel()
         self.registrations = [entry for entry in self.registrations if entry.active]
         self.refresh_mask()
         with self.lock:
-            for task in self.tasks.pop(plugin_id, set()):
+            for task in self.tasks.pop(installation_id, set()):
                 task.cancel()
-            pending = [key for key, (owner, _) in self.requests.items() if owner.plugin_id == plugin_id]
+            pending = [key for key, (owner, _) in self.requests.items() if owner.installation_id == installation_id]
             for key in pending:
                 _, future = self.requests.pop(key)
                 future.cancel()
             for key, item in list(self.ui_calls.items()):
-                if item[0].plugin_id == plugin_id:
+                if item[0].installation_id == installation_id:
                     self.ui_calls.pop(key)
                     item[2].cancel()
-            for key in [key for key in self.element_handlers if key[0] == plugin_id]:
+            for key in [key for key in self.element_handlers if key[0] == installation_id]:
                 self.element_handlers.pop(key)
             for key in [key for key, (owner, _) in self.widget_rules.items()
-                        if owner.plugin_id == plugin_id]:
+                        if owner.installation_id == installation_id]:
                 self.widget_rules.pop(key)
-            surfaces = [key for key, item in self.surfaces.items() if item.owner.plugin_id == plugin_id]
+            surfaces = [key for key, item in self.surfaces.items() if item.owner.installation_id == installation_id]
             for key in surfaces:
                 self.surfaces.pop(key).closed = True
-            if plugin_id in self.contexts:
-                self.contexts[plugin_id].active = False
+            if installation_id in self.contexts:
+                self.contexts[installation_id].active = False
             try:
                 # Also closes UI the plugin queued before its surfaces were registered.
-                self.submit({"method": "ui.close_plugin", "id": uuid.uuid4().hex, "plugin_id": plugin_id})
+                self.submit({"method": "ui.close_plugin", "id": uuid.uuid4().hex, "installation_id": installation_id})
             except RuntimeError:
                 pass
         for key in pending:
             try:
-                self.submit({"method": "cancel", "id": key, "plugin_id": plugin_id})
+                self.submit({"method": "cancel", "id": key, "installation_id": installation_id})
             except RuntimeError:
                 pass
-        self.contexts.pop(plugin_id, None)
+        self.contexts.pop(installation_id, None)
 
     def stop(self):
         self.stopping = True

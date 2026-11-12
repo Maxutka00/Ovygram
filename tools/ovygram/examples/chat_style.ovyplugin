@@ -3,9 +3,10 @@ from desktop import client, ui
 from desktop_utils import run_on_ui
 from ui.settings import Switch
 
-__id__ = "desktop.chat_style"
+__id__ = "chat_style"
 __name__ = "Список чатов и строка ввода"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = ("Метка на открытом чате в списке, скрытая кнопка эмодзи и "
                    "Ctrl+Alt+U, который делает текст в поле заглавным.")

@@ -1,9 +1,10 @@
 from base_plugin import BasePlugin
 from hook_utils import CANCEL, MODIFY, HookResult
 
-__id__ = "desktop.text_hooks"
+__id__ = "text_hooks"
 __name__ = "Обработка текста"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "Команда /cancel отменяется, /upper текст отправляется заглавными буквами."
 __platform__ = "desktop"

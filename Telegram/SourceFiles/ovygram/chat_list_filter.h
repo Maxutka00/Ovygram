@@ -16,7 +16,7 @@ namespace ChatListFilter {
 
 // "ui.chat_list.hide" and "ui.chat_list.unhide" commands.
 void Handle(const QJsonObject &command);
-void RemovePlugin(const QString &pluginId);
+void RemovePlugin(const QString &installationId);
 
 } // namespace ChatListFilter
 } // namespace Ovygram

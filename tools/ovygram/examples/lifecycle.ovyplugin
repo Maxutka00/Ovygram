@@ -1,9 +1,10 @@
 from base_plugin import BasePlugin
 from ui.settings import Input, Selector, Switch
 
-__id__ = "desktop.lifecycle"
+__id__ = "lifecycle"
 __name__ = "Проверка жизненного цикла"
 __version__ = "1.0.0"
+__release__ = False
 __author__ = "Ovygram"
 __description__ = "Счётчик запусков и пример трёх типов настроек."
 __platform__ = "desktop"

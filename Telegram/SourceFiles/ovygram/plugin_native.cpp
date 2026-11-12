@@ -71,7 +71,7 @@ protected:
 };
 
 struct Connection {
-	QString pluginId;
+	QString installationId;
 	QPointer<SignalRelay> relay;
 };
 
@@ -121,9 +121,9 @@ bool WindowFilter::eventFilter(QObject *watched, QEvent *e) {
 		{ u"title"_q, widget->windowTitle() },
 	};
 	const auto watchers = state.windowWatchers;
-	for (const auto &[ruleId, pluginId] : watchers) {
+	for (const auto &[ruleId, installationId] : watchers) {
 		state.send(QJsonObject{
-			{ u"plugin_id"_q, pluginId },
+			{ u"installation_id"_q, installationId },
 			{ u"type"_q, u"native_window"_q },
 			{ u"rule_id"_q, ruleId },
 			{ u"value"_q, value },
@@ -265,7 +265,7 @@ void SetEventSender(std::function<void(QJsonObject)> send) {
 
 void Handle(const QJsonObject &command) {
 	const auto method = command.value(u"method"_q).toString();
-	const auto pluginId = command.value(u"plugin_id"_q).toString();
+	const auto installationId = command.value(u"installation_id"_q).toString();
 	const auto ruleId = command.value(u"rule_id"_q).toString();
 	if (ruleId.isEmpty()) {
 		throw std::runtime_error("A native rule needs an ID.");
@@ -273,7 +273,7 @@ void Handle(const QJsonObject &command) {
 	auto &state = Get();
 	if (method == u"ui.native.windows"_q) {
 		if (command.value(u"enabled"_q).toBool()) {
-			state.windowWatchers[ruleId] = pluginId;
+			state.windowWatchers[ruleId] = installationId;
 			EnsureFilter();
 		} else {
 			state.windowWatchers.erase(ruleId);
@@ -287,14 +287,14 @@ void Handle(const QJsonObject &command) {
 		const auto relay = new SignalRelay(widget, signal, [=](QJsonArray args) {
 			if (const auto &send = Get().send) {
 				send(QJsonObject{
-					{ u"plugin_id"_q, pluginId },
+					{ u"installation_id"_q, installationId },
 					{ u"type"_q, u"native_signal"_q },
 					{ u"rule_id"_q, ruleId },
 					{ u"value"_q, args },
 				});
 			}
 		});
-		state.connections[ruleId] = Connection{ pluginId, relay };
+		state.connections[ruleId] = Connection{ installationId, relay };
 	} else if (method == u"ui.native.disconnect"_q) {
 		Disconnect(ruleId);
 		state.windowWatchers.erase(ruleId);
@@ -314,13 +314,13 @@ QJsonValue Request(const QJsonObject &command) {
 	throw std::runtime_error("Unknown native request.");
 }
 
-void RemovePlugin(const QString &pluginId) {
+void RemovePlugin(const QString &installationId) {
 	auto &state = Get();
 	std::erase_if(state.windowWatchers, [&](const auto &entry) {
-		return entry.second == pluginId;
+		return entry.second == installationId;
 	});
 	for (auto i = begin(state.connections); i != end(state.connections);) {
-		if (i->second.pluginId == pluginId) {
+		if (i->second.installationId == installationId) {
 			delete i->second.relay.data();
 			i = state.connections.erase(i);
 		} else {

@@ -16,7 +16,7 @@ namespace MessageDecorations {
 
 // "ui.message_decoration.set" and "ui.message_decoration.remove" commands.
 void Handle(const QJsonObject &command);
-void RemovePlugin(const QString &pluginId);
+void RemovePlugin(const QString &installationId);
 
 } // namespace MessageDecorations
 } // namespace Ovygram

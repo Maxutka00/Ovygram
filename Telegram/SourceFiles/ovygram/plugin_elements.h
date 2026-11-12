@@ -30,7 +30,7 @@ void Handle(const QJsonObject &command);
 
 // Requests with a reply: "compose.get_text".
 [[nodiscard]] QJsonValue Request(const QJsonObject &command);
-void RemovePlugin(const QString &pluginId);
+void RemovePlugin(const QString &installationId);
 
 } // namespace Elements
 } // namespace Ovygram
