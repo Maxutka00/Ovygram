@@ -19,6 +19,68 @@ baseline = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(baseline)
 
 
+class SourceVerificationTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.source = root / 'source'
+        module = root / 'module'
+        for repository in (self.source, module):
+            repository.mkdir()
+            self.git(repository, 'init')
+            self.git(repository, 'config', 'user.name', 'Build test')
+            self.git(repository, 'config', 'user.email', 'build-test@example.invalid')
+        (module / 'dependency.txt').write_text('pinned dependency', encoding='utf-8')
+        self.git(module, 'add', '.')
+        self.git(module, 'commit', '-m', 'Pinned dependency')
+        self.optional = next(iter(baseline.OPTIONAL_SUBMODULES))
+        for path in ('required', self.optional):
+            self.git(self.source, '-c', 'protocol.file.allow=always',
+                     'submodule', 'add', str(module), path)
+        self.git(self.source, 'commit', '-am', 'Pin dependencies')
+        self.expected = self.git(self.source, 'rev-parse', 'HEAD').strip()
+
+    def git(self, repository, *arguments):
+        return subprocess.check_output(
+            ['git', '-C', str(repository), *arguments], text=True,
+            stderr=subprocess.STDOUT)
+
+    def test_all_pinned_submodules_are_accepted(self):
+        modules = baseline.verify_source(self.source, self.expected)
+        self.assertEqual(len(modules), 2)
+        self.assertTrue(all(line.startswith(' ') for line in modules))
+
+    def test_deliberately_absent_test262_is_accepted(self):
+        self.git(self.source, 'submodule', 'deinit', '-f', self.optional)
+        modules = baseline.verify_source(self.source, self.expected)
+        self.assertTrue(any(line.startswith('-') and line.endswith(self.optional)
+                            for line in modules))
+
+    def test_missing_required_submodule_is_rejected(self):
+        self.git(self.source, 'submodule', 'deinit', '-f', 'required')
+        with self.assertRaisesRegex(RuntimeError, 'pinned revision:.*\n.*required'):
+            baseline.verify_source(self.source, self.expected)
+
+    def test_changed_optional_revision_is_rejected(self):
+        repository = self.source / self.optional
+        self.git(repository, '-c', 'user.name=Build test',
+                 '-c', 'user.email=build-test@example.invalid',
+                 'commit', '--allow-empty', '-m', 'Unpinned change')
+        with self.assertRaisesRegex(RuntimeError, 'pinned revision:.*\n\\+'):
+            baseline.verify_source(self.source, self.expected)
+
+    def test_wrong_source_commit_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, 'expected commit'):
+            baseline.verify_source(self.source, '0' * 40)
+
+    def test_tracked_modifications_are_rejected(self):
+        with (self.source / '.gitmodules').open('a', encoding='utf-8') as stream:
+            stream.write('\n# local modification\n')
+        with self.assertRaisesRegex(RuntimeError, 'tracked modifications'):
+            baseline.verify_source(self.source, self.expected)
+
+
 class BaselineTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

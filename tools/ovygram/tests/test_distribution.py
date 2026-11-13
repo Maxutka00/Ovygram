@@ -81,7 +81,7 @@ class DistributionTests(unittest.TestCase):
         raise ValueError("Unexpected URL: " + url)
 
     def source(self, version="1.0.0", extra="", release=True):
-        text = EXAMPLE.read_text().replace('"1.0.0"', repr(version))
+        text = EXAMPLE.read_text(encoding="utf-8").replace('"1.0.0"', repr(version))
         # The example is deliberately local-only.
         import re
         text = re.sub(r"__release__\s*=\s*(True|False)", "__release__ = " + repr(release), text)

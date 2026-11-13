@@ -15,6 +15,11 @@ CLIENT_VERSION = '7.4.3'
 # Keep in sync with OvygramVersionStr in Telegram/SourceFiles/core/version.h.
 OVYGRAM_VERSION = '0.1.0'
 GIB = 1024 ** 3
+# QuickJS deliberately sets update=none for its JavaScript conformance suite.
+# It is not a client build dependency and recursive checkout leaves it absent.
+OPTIONAL_SUBMODULES = {
+    'Telegram/ThirdParty/widget-sandbox/packages/ios/Sources/CQuickJS/quickjs/test262',
+}
 
 
 def write_json(path, value):
@@ -26,15 +31,18 @@ def write_json(path, value):
 
 def git(source, *arguments):
     return subprocess.check_output(
-        ['git', '-C', str(source), *arguments], text=True).strip()
+        ['git', '-C', str(source), *arguments], text=True).rstrip('\r\n')
 
 
 def verify_source(source, expected=UPSTREAM):
     if git(source, 'rev-parse', 'HEAD') != expected:
         raise RuntimeError('Source does not match the expected commit.')
     modules = git(source, 'submodule', 'status', '--recursive').splitlines()
-    if any(line and line[0] in '-+U' for line in modules):
-        raise RuntimeError('Submodule missing or not at its pinned revision.')
+    invalid = [line for line in modules if line and line[0] in '-+U'
+               and not (line[0] == '-' and line[42:] in OPTIONAL_SUBMODULES)]
+    if invalid:
+        raise RuntimeError('Submodule missing or not at its pinned revision:\n'
+                           + '\n'.join(invalid))
     if git(source, 'status', '--porcelain', '--untracked-files=no'):
         raise RuntimeError('Baseline source has tracked modifications.')
     return modules

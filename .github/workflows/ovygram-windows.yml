@@ -66,6 +66,7 @@ jobs:
         if: inputs.mode != 'inspect'
         run: |
           python control/tools/ovygram/baseline.py verify --root "$env:GITHUB_WORKSPACE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s control/tools/ovygram/tests -v
 
       - name: Stage embedded Python
