@@ -75,6 +75,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #ifdef OVYGRAM_ENABLED
 #include "ovygram/plugin_elements.h"
+#include "ovygram/plugin_panel_buttons.h"
 #endif // OVYGRAM_ENABLED
 
 namespace HistoryView {
@@ -166,6 +167,10 @@ TopBarWidget::TopBarWidget(
 	_menuToggle->setAcceptBoth(true, true);
 	_infoToggle->setClickedCallback([=] { toggleInfoSection(); });
 #ifdef OVYGRAM_ENABLED
+	Ovygram::PanelButtons::RegisterHost(this, u"chat.top_bar"_q, [this] {
+		updateControlsGeometry();
+		update();
+	});
 	Ovygram::RegisterElements({
 		{ "chat.top_bar.call", _call.data() },
 		{ "chat.top_bar.search", _search.data() },
@@ -1146,6 +1151,9 @@ void TopBarWidget::updateInfoButtonVisibility() {
 
 void TopBarWidget::updateControlsGeometry() {
 	if (!_activeChat.key) {
+#ifdef OVYGRAM_ENABLED
+		Ovygram::PanelButtons::Hide(this);
+#endif // OVYGRAM_ENABLED
 		return;
 	}
 	const auto hasSelected = showSelectedActions();
@@ -1316,6 +1324,18 @@ void TopBarWidget::updateControlsGeometry() {
 	if (!_search->isHidden()) {
 		_rightTaken += _search->width() + st::topBarCallSkip;
 	}
+
+#ifdef OVYGRAM_ENABLED
+	const auto panelPeer = (!hasSelected && !_selectedShown.animating()
+		&& !_searchMode && !_searchShown.animating() && !_chooseForReportReason
+		&& !_animatingMode && _narrowRatio == 0. && _activeChat.section != Section::ChatsList)
+		? _activeChat.key.peer() : nullptr;
+	const auto panelBudget = std::max(0, std::min(width() / 3,
+		width() - _leftTaken - _rightTaken - 2 * st::topBarHeight));
+	const auto panelWidth = Ovygram::PanelButtons::Prepare(this, panelPeer, panelBudget, height());
+	Ovygram::PanelButtons::Place(this, width() - _rightTaken - panelWidth, otherButtonsTop, height());
+	_rightTaken += panelWidth;
+#endif // OVYGRAM_ENABLED
 
 	updateMembersShowArea();
 }

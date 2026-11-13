@@ -117,6 +117,7 @@ ui.add_menu_item("message", "Скопировать текст",
 | --- | --- |
 | `"main"` | Боковое главное меню |
 | `"chat"` | «⋮» в верхней панели чата и контекстное меню чата в списке |
+| `"profile"` | Меню профиля пользователя, группы или канала |
 | `"message"` | Контекстное меню сообщения |
 
 `callback(menu)` получает `MenuContext` с полями `account_id`, `chat`
@@ -124,6 +125,49 @@ ui.add_menu_item("message", "Скопировать текст",
 `None`. `kinds` ограничивает пункты чатов и сообщений типами чатов: `user`,
 `chat` (обычная группа), `channel` (каналы и супергруппы). Пункт появляется
 при следующем открытии меню. Результат имеет `remove()`.
+
+## Свои кнопки в панелях Telegram
+
+`add_panel_button(panel, text, callback, *, tooltip="", width=40, priority=0,
+enabled=True, visible=True, chat=None, kinds=None)` создаёт нативную кнопку:
+
+| `panel` | Место |
+| --- | --- |
+| `"chat.top_bar"` | Верхняя панель открытого чата, перед штатными кнопками справа |
+| `"compose"` | Строка ввода, после кнопок вложения/отправителя и перед текстовым полем |
+
+```python
+self.panel_button = ui.add_panel_button(
+    "chat.top_bar", "★", self.on_panel_click, tooltip="Действие плагина")
+
+def on_panel_click(self, panel):
+    self.log(f"Нажатие: аккаунт {panel.account_id}, чат {panel.chat.id}")
+    self.panel_button.update(text="✓", tooltip="Выполнено")
+```
+
+Обработчик получает `PanelContext(account_id, chat, panel)` с настоящим
+аккаунтом и чатом окна, в котором нажали кнопку. Поддерживается `async def`.
+Без фильтров кнопка доступна во всех подходящих открытых чатах; `chat=Chat`
+ограничивает её конкретным чатом и аккаунтом, `kinds=["user", "chat", "channel"]`
+— типами чатов. Это те же типы, что у пунктов меню.
+
+Возвращается `PanelButton`: `update(text=..., tooltip=..., width=...,
+priority=..., enabled=..., visible=...)`, `show()`, `hide()`, `remove()`.
+При выгрузке экземпляра его кнопки и обработчики удаляются; после удаления
+`update()` вызывает `ObjectDestroyed`.
+
+`width` — желаемая ширина 32–160 логических пикселей; круглая кнопка не бывает
+уже своей высоты. Выше `priority` — раньше получает место; при равенстве
+сохраняется порядок добавления. Допустимый приоритет: −10000…10000.
+Подпись — до 32 единиц UTF-16, подсказка — до 256. Лимиты: 16 кнопок
+на экземпляр и 64 во всём клиенте.
+
+Кнопки участвуют в штатной раскладке. Они занимают не более трети ширины
+панели и скрываются при нехватке места, сохраняя место штатным элементам.
+Верхняя панель скрывает их при поиске, выделении сообщений и переходах;
+строка ввода — при записи, скрытом поле и режимах без дополнительных кнопок.
+Внешний вид и эти переходы нужно проверить в собранном клиенте по
+[чек-листу](ui-checklist.md).
 
 ## Элементы Telegram
 
@@ -225,6 +269,7 @@ Telegram нажатие не получает. `off_click()` снимает об
 | [`chat_bar`](../tools/ovygram/examples/chat_bar.ovyplugin) | Полоса в чате |
 | [`section`](../tools/ovygram/examples/section.ovyplugin) | Страница плагина из главного меню |
 | [`menus`](../tools/ovygram/examples/menus.ovyplugin) | Пункты в трёх меню |
+| [`panel_buttons`](../tools/ovygram/examples/panel_buttons.ovyplugin) | Кнопки в верхней панели и строке ввода, контекст нажатия |
 | [`top_bar`](../tools/ovygram/examples/top_bar.ovyplugin) | Скрытие и перехват кнопок, цвета |
 | [`widget_inspector`](../tools/ovygram/examples/widget_inspector.ovyplugin) | Дерево виджетов, Ctrl+Shift+I |
 | [`chat_style`](../tools/ovygram/examples/chat_style.ovyplugin) | Декорация чатов, Ctrl+Alt+U |

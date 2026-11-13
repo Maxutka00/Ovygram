@@ -1,4 +1,5 @@
 #include "ovygram/plugin_widgets.h"
+#include "ovygram/plugin_install.h"
 
 #include "ovygram/plugin_elements.h"
 
@@ -140,6 +141,7 @@ quint64 HandleOf(QWidget *widget) {
 }
 
 [[nodiscard]] bool MatchesSelf(QWidget *widget, const Selector &selector) {
+	if (InstallationUiActive()) return false;
 	if (!selector.className.isEmpty()
 		&& ClassName(widget) != selector.className) {
 		return false;
@@ -291,6 +293,7 @@ void Send(const QString &installationId, const QString &type, const QString &rul
 }
 
 bool Filter::eventFilter(QObject *watched, QEvent *e) {
+	if (InstallationUiActive()) return false;
 	const auto type = e->type();
 	auto &state = Get();
 	if (type == QEvent::ShortcutOverride && !state.keys.empty()) {
@@ -453,6 +456,7 @@ QJsonObject Describe(QWidget *widget, int depth, int maxDepth, int &count) {
 } // namespace
 
 QWidget *Resolve(const QJsonValue &handle) {
+	if (InstallationUiActive()) return nullptr;
 	auto &handles = Get().handles;
 	const auto i = handles.find(handle.toString().toULongLong());
 	if (i == end(handles)) {
@@ -590,6 +594,7 @@ void RemovePlugin(const QString &installationId) {
 }
 
 QString HandleFor(QWidget *widget) {
+	if (InstallationUiActive()) return QString();
 	return QString::number(HandleOf(widget));
 }
 

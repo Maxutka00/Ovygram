@@ -28,6 +28,7 @@
 | [`media_transfer`](media_transfer.ovyplugin) | Отправка и скачивание файлов с прогрессом |
 | [`ui_widgets`](ui_widgets.ovyplugin), [`chat_bar`](chat_bar.ovyplugin), [`section`](section.ovyplugin), [`menus`](menus.ovyplugin) | Окна, холст, полоса в чате, страница, меню |
 | [`top_bar`](top_bar.ovyplugin), [`chat_style`](chat_style.ovyplugin), [`highlight`](highlight.ovyplugin) | Встроенные кнопки, декорации чатов и сообщений, цвета |
+| [`panel_buttons`](panel_buttons.ovyplugin) | Новые кнопки в штатном заголовке чата и строке ввода, контекст аккаунта, изменение и удаление |
 | [`widget_inspector`](widget_inspector.ovyplugin), [`native_events`](native_events.ovyplugin) | Дерево виджетов, сигналы и окна Qt |
 
 ## Правила, которым следуют примеры

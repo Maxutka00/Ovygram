@@ -1,5 +1,7 @@
 # Плагины Ovygram
 
+Установка, статусы доверия и обновления описаны в [plugin-distribution.md](plugin-distribution.md).
+
 С чего начать — [руководство по плагинам](guide.md) и
 [шаблон проекта](../tools/ovygram/template). Перенос плагинов с Android —
 [отдельная страница](porting-android.md).

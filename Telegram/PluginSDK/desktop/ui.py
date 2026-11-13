@@ -416,6 +416,8 @@ class WidgetRule:
             runtime.submit_ui(self.owner, "ui.compose.watch", rule_id=self.id, enabled=False)
         elif self.method == "ui.menu.add":
             runtime.submit_ui(self.owner, "ui.menu.remove", rule_id=self.id)
+        elif self.method == "ui.panel.add":
+            runtime.submit_ui(self.owner, "ui.panel.remove", rule_id=self.id)
         elif self.method.startswith("ui.native."):
             runtime.submit_ui(self.owner, "ui.native.disconnect", rule_id=self.id)
         else:
@@ -657,7 +659,7 @@ class MenuContext:
     message: object = None
 
 
-_MENUS = ("main", "chat", "message")
+_MENUS = ("main", "chat", "profile", "message")
 _CHAT_KINDS = ("user", "chat", "channel")
 
 
@@ -665,9 +667,10 @@ def add_menu_item(menu, text, callback, kinds=None):
     """Adds an item to a Telegram menu, after its own items.
 
     menu is "main" (the side menu), "chat" (the chat's "⋮" menu and its
-    context menu in the chat list) or "message" (a message's context menu).
+    context menu in the chat list), "profile" (the profile's menu), or
+    "message" (a message's context menu).
     callback(context) gets a MenuContext; it may be a coroutine function.
-    kinds limits a "chat" or "message" item to chats of these kinds: "user",
+    kinds limits a "chat", "profile" or "message" item to these kinds: "user",
     "chat" (basic group), "channel" (also supergroups). The item shows from
     the next time the menu opens. Returns a rule with remove()."""
     _choice(menu, _MENUS, "menu")
@@ -677,7 +680,7 @@ def add_menu_item(menu, text, callback, kinds=None):
         raise TypeError("callback должен быть функцией.")
     if kinds is not None:
         if menu == "main":
-            raise ValueError("kinds применим только к меню chat и message.")
+            raise ValueError("kinds применим только к меню chat, profile и message.")
         kinds = list(kinds)
         if not kinds or any(kind not in _CHAT_KINDS for kind in kinds):
             raise ValueError("kinds: непустой список из user, chat, channel.")
@@ -693,3 +696,106 @@ def add_menu_item(menu, text, callback, kinds=None):
 
     return WidgetRule(context(), "ui.menu.add", clicked, menu=menu, text=text.strip(),
                       kinds=kinds or [])
+
+
+@dataclass(frozen=True)
+class PanelContext:
+    """The account and chat of the panel the user actually clicked."""
+
+    account_id: str
+    chat: object
+    panel: str
+
+
+def _panel_parameters(panel, text, tooltip, width, priority, enabled, visible, chat, kinds):
+    _choice(panel, ("chat.top_bar", "compose"), "panel")
+    if not isinstance(text, str) or not text.strip() or len(text.encode("utf-16-le")) > 64:
+        raise ValueError("Текст кнопки: непустая строка до 32 единиц UTF-16.")
+    if not isinstance(tooltip, str) or len(tooltip.encode("utf-16-le")) > 512:
+        raise ValueError("Подсказка кнопки: строка до 256 единиц UTF-16.")
+    if type(width) is not int or not 32 <= width <= 160:
+        raise ValueError("width: целое число от 32 до 160.")
+    if type(priority) is not int or not -10000 <= priority <= 10000:
+        raise ValueError("priority: целое число от -10000 до 10000.")
+    if type(enabled) is not bool or type(visible) is not bool:
+        raise ValueError("enabled и visible должны быть bool.")
+    if kinds is not None:
+        if isinstance(kinds, str):
+            raise ValueError("kinds: список из user, chat, channel.")
+        kinds = list(kinds)
+        if not kinds or any(kind not in _CHAT_KINDS for kind in kinds):
+            raise ValueError("kinds: непустой список из user, chat, channel.")
+    account_id = chat_id = ""
+    if chat is not None:
+        account_id = str(getattr(chat, "account_id", ""))
+        chat_id = str(getattr(chat, "id", ""))
+        if not account_id.isascii() or not account_id.isdecimal() or int(account_id) <= 0 \
+                or not chat_id.isascii() or not chat_id.isdecimal() or int(chat_id) <= 0:
+            raise TypeError("chat должен быть Chat из desktop.client с аккаунтом и ID.")
+    return {"panel": panel, "text": text.strip(), "tooltip": tooltip, "width": width,
+            "priority": priority, "enabled": enabled, "visible": visible,
+            "account_id": account_id, "chat_id": chat_id, "kinds": kinds or []}
+
+
+class PanelButton(WidgetRule):
+    """A native button in a documented Telegram panel, removed on unload.
+
+    Higher priorities receive space first. Buttons that do not fit are
+    hidden; they never cover Telegram's controls. Optional chat/kinds filters
+    apply to every open window. callback receives a PanelContext.
+    """
+
+    def __init__(self, panel, text, callback, *, tooltip="", width=40, priority=0,
+                 enabled=True, visible=True, chat=None, kinds=None):
+        if not callable(callback):
+            raise TypeError("callback должен быть функцией.")
+        self.panel = panel
+        self._chat = chat
+        self._kinds = None if kinds is None else list(kinds) if not isinstance(kinds, str) else kinds
+        self._parameters = _panel_parameters(panel, text, tooltip, width, priority,
+                                              enabled, visible, chat, self._kinds)
+
+        def clicked(value):
+            from .models import chat_from_native
+            parameters = self._parameters
+            if self.removed or not parameters["visible"] or not parameters["enabled"] \
+                    or value.get("panel") != self.panel:
+                return
+            account_id = str(value["account_id"])
+            target = chat_from_native(value["chat"])
+            if target.account_id != account_id:
+                raise ValueError("Аккаунт панели не совпадает с аккаунтом чата.")
+            if parameters["account_id"] and (parameters["account_id"] != account_id
+                    or parameters["chat_id"] != str(target.id)):
+                return
+            if parameters["kinds"] and target.kind not in parameters["kinds"]:
+                return
+            return callback(PanelContext(account_id, target, self.panel))
+
+        super().__init__(context(), "ui.panel.add", clicked, **self._parameters)
+
+    def update(self, text=None, tooltip=None, width=None, priority=None, enabled=None, visible=None):
+        with self.owner.manager.runtime.lock:
+            if self.removed or not self.owner.active:
+                raise ObjectDestroyed("Кнопка удалена или плагин уже выгружен.")
+            changes = {"text": text, "tooltip": tooltip, "width": width,
+                       "priority": priority, "enabled": enabled, "visible": visible}
+            values = {key: value for key, value in changes.items() if value is not None}
+            candidate = {**self._parameters, **values}
+            parameters = _panel_parameters(self.panel, candidate["text"], candidate["tooltip"],
+                                           candidate["width"], candidate["priority"], candidate["enabled"],
+                                           candidate["visible"], self._chat, self._kinds)
+            self.owner.manager.runtime.submit_ui(self.owner, "ui.panel.add", rule_id=self.id, **parameters)
+            self._parameters = parameters
+
+    def show(self):
+        self.update(visible=True)
+
+    def hide(self):
+        self.update(visible=False)
+
+
+def add_panel_button(panel, text, callback, *, tooltip="", width=40, priority=0,
+                     enabled=True, visible=True, chat=None, kinds=None):
+    return PanelButton(panel, text, callback, tooltip=tooltip, width=width, priority=priority,
+                       enabled=enabled, visible=visible, chat=chat, kinds=kinds)

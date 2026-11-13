@@ -6,6 +6,7 @@
 #include "ovygram/message_decorations.h"
 #include "ovygram/plugin_elements.h"
 #include "ovygram/plugin_menus.h"
+#include "ovygram/plugin_panel_buttons.h"
 #include "ovygram/plugin_native.h"
 #include "ovygram/plugin_paint.h"
 #include "ovygram/plugin_section.h"
@@ -349,6 +350,7 @@ PluginUi::PluginUi(EventSender send)
 	Elements::SetEventSender(_send);
 	Widgets::SetEventSender(_send);
 	Menus::SetEventSender(_send);
+	PanelButtons::SetEventSender(_send);
 	Native::SetEventSender(_send);
 }
 
@@ -362,6 +364,7 @@ PluginUi::~PluginUi() {
 		Elements::SetEventSender(nullptr);
 		Widgets::SetEventSender(nullptr);
 		Menus::SetEventSender(nullptr);
+		PanelButtons::SetEventSender(nullptr);
 		Native::SetEventSender(nullptr);
 	}
 	// Surfaces report their destruction to destroyed(), which erases from
@@ -405,9 +408,12 @@ void PluginUi::handle(const QJsonObject &command) {
 		ChatListFilter::RemovePlugin(command.value(u"installation_id"_q).toString());
 		MessageDecorations::RemovePlugin(command.value(u"installation_id"_q).toString());
 		Menus::RemovePlugin(command.value(u"installation_id"_q).toString());
+		PanelButtons::RemovePlugin(command.value(u"installation_id"_q).toString());
 		Native::RemovePlugin(command.value(u"installation_id"_q).toString());
 	} else if (method.startsWith(u"ui.menu."_q)) {
 		Menus::Handle(command);
+	} else if (method.startsWith(u"ui.panel."_q)) {
+		PanelButtons::Handle(command);
 	} else if (method.startsWith(u"ui.native."_q)) {
 		Native::Handle(command);
 	} else if (method.startsWith(u"ui.message_decoration."_q)) {

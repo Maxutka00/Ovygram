@@ -32,6 +32,7 @@ constexpr auto kMaximumItems = 64;
 enum class Location {
 	Main,
 	Chat,
+	Profile,
 	Message,
 };
 
@@ -112,8 +113,10 @@ void Clicked(
 		return Location::Chat;
 	} else if (value == u"message"_q) {
 		return Location::Message;
+	} else if (value == u"profile"_q) {
+		return Location::Profile;
 	}
-	throw std::runtime_error("Menu must be main, chat or message.");
+	throw std::runtime_error("Menu must be main, chat, profile or message.");
 }
 
 } // namespace
@@ -140,13 +143,13 @@ void FillMainMenu(
 	}
 }
 
-void FillChatMenu(PeerData *peer, const Ui::Menu::MenuCallback &addAction) {
+void FillPeerMenu(Location location, PeerData *peer, const Ui::Menu::MenuCallback &addAction) {
 	if (!peer) {
 		return;
 	}
 	const auto session = base::make_weak(&peer->session());
 	const auto peerId = peer->id;
-	for (const auto &[id, item] : ItemsFor(Location::Chat, peer)) {
+	for (const auto &[id, item] : ItemsFor(location, peer)) {
 		const auto ruleId = id;
 		addAction(item.text, [=] {
 			if (const auto strong = session.get()) {
@@ -158,6 +161,14 @@ void FillChatMenu(PeerData *peer, const Ui::Menu::MenuCallback &addAction) {
 			}
 		}, &st::menuIconCustomize);
 	}
+}
+
+void FillChatMenu(PeerData *peer, const Ui::Menu::MenuCallback &addAction) {
+	FillPeerMenu(Location::Chat, peer, addAction);
+}
+
+void FillProfileMenu(PeerData *peer, const Ui::Menu::MenuCallback &addAction) {
+	FillPeerMenu(Location::Profile, peer, addAction);
 }
 
 void FillMessageMenu(not_null<Ui::PopupMenu*> menu, HistoryItem *item) {
@@ -197,6 +208,12 @@ void SetEventSender(std::function<void(QJsonObject)> send) {
 
 void SetDescriber(Describer describer) {
 	Get().describe = std::move(describer);
+}
+
+QJsonObject DescribeContext(Main::Session &session, PeerData *peer, HistoryItem *item) {
+	auto result = Get().describe ? Get().describe(session, peer, item) : QJsonObject();
+	result.insert(u"account_id"_q, QString::number(session.uniqueId()));
+	return result;
 }
 
 void Handle(const QJsonObject &command) {

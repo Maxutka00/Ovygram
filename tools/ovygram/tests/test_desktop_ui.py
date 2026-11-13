@@ -401,6 +401,128 @@ class DesktopUiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.as_plugin(self.a, lambda: ui.add_menu_item("chat", "x", print, kinds=["bot"]))
 
+    def test_profile_menu_carries_profile_account_and_unloads_its_handler(self):
+        clicks = []
+        self.as_plugin(self.a, lambda: ui.add_menu_item("profile", "Профиль", clicks.append, kinds=["user"]))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["menu"]), ("ui.menu.add", "profile"))
+        value = {"account_id": "42", "chat": self.native_chat()}
+        self.event(installation_id=self.a, type="menu_click", rule_id=command["rule_id"], value=value)
+        self.assertEqual((clicks[0].account_id, clicks[0].chat.id, clicks[0].message), ("42", 777, None))
+        self.manager.disable(self.a)
+        self.event(installation_id=self.a, type="menu_click", rule_id=command["rule_id"], value=value)
+        self.assertEqual(len(clicks), 1)
+
+    def test_panel_button_uses_clicked_account_and_checks_owner(self):
+        from desktop._runtime import context
+        clicks = []
+        button = self.as_plugin(self.a, lambda: ui.add_panel_button(
+            "chat.top_bar", "★", lambda value: clicks.append((context().installation_id, value)),
+            tooltip="Действие в чате", priority=10, width=48))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["method"], command["panel"], command["installation_id"], command["width"]),
+                         ("ui.panel.add", "chat.top_bar", self.a, 48))
+        value = {"panel": "chat.top_bar", "account_id": "99", "chat": self.native_chat("99", 888)}
+        self.event(installation_id=self.b, type="panel_button_click", rule_id=button.id, value=value)
+        self.assertEqual(clicks, [])
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id, value=value)
+        self.assertEqual((clicks[0][0], clicks[0][1].account_id, clicks[0][1].chat.id, clicks[0][1].panel),
+                         (self.a, "99", 888, "chat.top_bar"))
+        self.manager.disable(self.a)
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id, value=value)
+        self.assertEqual(len(clicks), 1)
+        with self.assertRaises(ui.ObjectDestroyed):
+            button.update(text="Old")
+
+    def test_panel_button_updates_and_drops_disabled_or_hidden_clicks(self):
+        clicks = []
+        button = self.as_plugin(self.a, lambda: ui.add_panel_button("compose", "+", clicks.append))
+        self.commands_list()
+        value = {"panel": "compose", "account_id": "42", "chat": self.native_chat()}
+        button.update(text="✓", tooltip="Готово", enabled=False, width=64)
+        updated = self.commands_list()[-1]
+        self.assertEqual((updated["rule_id"], updated["text"], updated["width"], updated["enabled"]),
+                         (button.id, "✓", 64, False))
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id, value=value)
+        self.assertEqual(clicks, [])
+        button.update(enabled=True)
+        button.hide()
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id, value=value)
+        self.assertEqual(clicks, [])
+        button.show()
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id, value=value)
+        self.assertEqual(len(clicks), 1)
+        self.commands_list()
+        button.remove()
+        button.remove()
+        self.assertEqual([item["method"] for item in self.commands_list()], ["ui.panel.remove"])
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id, value=value)
+        self.assertEqual(len(clicks), 1)
+        with self.assertRaises(ui.ObjectDestroyed):
+            button.show()
+
+    def test_panel_buttons_of_same_plugin_installations_are_independent(self):
+        other = self.manager.install(str(self.root / "plugin_a.ovyplugin"), separate=True)
+        self.manager.enable(other)
+        self.owners[other] = self.manager.loaded[other][1]
+        first_clicks, second_clicks = [], []
+        first = self.as_plugin(self.a, lambda: ui.add_panel_button("compose", "1", first_clicks.append))
+        second = self.as_plugin(other, lambda: ui.add_panel_button("compose", "2", second_clicks.append))
+        self.assertEqual(self.manager.records[self.a]["plugin_id"], self.manager.records[other]["plugin_id"])
+        value = {"panel": "compose", "account_id": "42", "chat": self.native_chat()}
+        self.manager.disable(self.a)
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=first.id, value=value)
+        self.event(installation_id=other, type="panel_button_click", rule_id=second.id, value=value)
+        self.assertEqual(first_clicks, [])
+        self.assertEqual(len(second_clicks), 1)
+
+    def test_panel_button_scope_and_kind_filters_reject_unrelated_chats(self):
+        from desktop.models import chat_from_native
+        clicks = []
+        button = self.as_plugin(self.a, lambda: ui.add_panel_button(
+            "compose", "★", clicks.append, chat=chat_from_native(self.native_chat()), kinds=["chat"]))
+        command = self.commands_list()[-1]
+        self.assertEqual((command["account_id"], command["chat_id"], command["kinds"]), ("42", "777", ["chat"]))
+        for account, chat_id in (("99", 777), ("42", 888)):
+            self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id,
+                       value={"panel": "compose", "account_id": account, "chat": self.native_chat(account, chat_id)})
+        self.assertEqual(clicks, [])
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id,
+                   value={"panel": "compose", "account_id": "42", "chat": {**self.native_chat(), "kind": "user"}})
+        self.assertEqual(clicks, [])
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id,
+                   value={"panel": "compose", "account_id": "42", "chat": self.native_chat()})
+        self.assertEqual(len(clicks), 1)
+
+    def test_panel_button_validates_before_queuing_and_keeps_previous_state(self):
+        button = self.as_plugin(self.a, lambda: ui.add_panel_button("compose", "★", print))
+        self.commands_list()
+        for changes in ({"width": 0}, {"width": True}, {"enabled": 1}, {"priority": 10001}, {"text": "x" * 33}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                button.update(**changes)
+        self.assertEqual(self.commands_list(), [])
+        for changes in ({"panel": "settings"}, {"kinds": "user"}, {"kinds": ["bot"]}, {"visible": 1}):
+            parameters = {"panel": "compose", "text": "★", "callback": print, **changes}
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.as_plugin(self.a, lambda: ui.add_panel_button(**parameters))
+        self.assertEqual(self.commands_list(), [])
+
+    def test_async_panel_callback_keeps_its_plugin_context(self):
+        from desktop._runtime import context
+        done, owners = threading.Event(), []
+
+        async def clicked(value):
+            import asyncio
+            await asyncio.sleep(0)
+            owners.append((context().installation_id, value.account_id))
+            done.set()
+
+        button = self.as_plugin(self.a, lambda: ui.add_panel_button("compose", "★", clicked))
+        self.event(installation_id=self.a, type="panel_button_click", rule_id=button.id,
+                   value={"panel": "compose", "account_id": "42", "chat": self.native_chat()})
+        self.assertTrue(done.wait(timeout=2))
+        self.assertEqual(owners, [(self.a, "42")])
+
     def test_menus_example_registers_its_items(self):
         plugin_id = self.manager.install(str(ROOT / "tools/ovygram/examples/menus.ovyplugin"))
         self.manager.enable(plugin_id)

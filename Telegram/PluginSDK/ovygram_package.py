@@ -46,6 +46,10 @@ class InvalidPlugin(ValueError):
     """The message is shown to the author or the user."""
 
 
+class IncompatiblePlugin(InvalidPlugin):
+    """A valid SDK requirement that is newer than this application."""
+
+
 # Plugin ID.
 
 def normalize_id(value: object) -> str:
@@ -144,8 +148,10 @@ def check_metadata(values: dict) -> dict:
         raise InvalidPlugin("__release__ должен быть True или False.")
     if values["platform"] != "desktop":
         raise InvalidPlugin('Нужен __platform__ = "desktop".')
-    if type(values["sdk"]) is not int or not 1 <= values["sdk"] <= SDK_VERSION:
+    if type(values["sdk"]) is not int or values["sdk"] < 1:
         raise InvalidPlugin(f"__desktop_sdk__: целое число от 1 до {SDK_VERSION}.")
+    if values["sdk"] > SDK_VERSION:
+        raise IncompatiblePlugin(f"Плагину требуется Desktop SDK {values['sdk']}, доступен {SDK_VERSION}.")
     requirements = values.get("requirements", [])
     if not isinstance(requirements, list) or len(requirements) > 32 \
             or not all(isinstance(item, str) and item.strip() for item in requirements):

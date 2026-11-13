@@ -1,4 +1,5 @@
 #include "ovygram/plugin_native.h"
+#include "ovygram/plugin_install.h"
 
 #include "ovygram/plugin_widgets.h"
 
@@ -99,6 +100,7 @@ State &Get() {
 }
 
 bool WindowFilter::eventFilter(QObject *watched, QEvent *e) {
+	if (InstallationUiActive()) return false;
 	const auto type = e->type();
 	if (type != QEvent::Show && type != QEvent::Hide) {
 		return false;

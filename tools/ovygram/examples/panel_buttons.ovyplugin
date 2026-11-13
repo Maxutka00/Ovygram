@@ -1,0 +1,40 @@
+from base_plugin import BasePlugin
+from desktop import ui
+
+__id__ = "panel_buttons"
+__name__ = "Кнопки в панелях"
+__version__ = "1.0.0"
+__release__ = False
+__author__ = "SDK Examples"
+__description__ = ("Добавляет настоящие кнопки в верхнюю панель чата и строку ввода. "
+                   "Показывает контекст аккаунта, обновление кнопки и удаление при выгрузке.")
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+__requirements__ = []
+
+
+class PanelButtonsPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.clicks = 0
+        self.buttons = [
+            ui.add_panel_button("chat.top_bar", "★", self.clicked,
+                                tooltip="Контекст этого чата", priority=10),
+            ui.add_panel_button("compose", "+", self.clicked,
+                                tooltip="Действие в строке ввода"),
+        ]
+
+    def clicked(self, panel):
+        self.clicks += 1
+        self.buttons[0].update(tooltip=f"Нажатий: {self.clicks}")
+        dialog = ui.Dialog(ui.Column(
+            ui.Text(f"Аккаунт: {panel.account_id}"),
+            ui.Text(f"Чат: {panel.chat.name} ({panel.chat.id})"),
+            ui.Text(f"Панель: {panel.panel}"),
+            ui.Button("Закрыть", on_click=lambda: dialog.close()),
+        ), title="Кнопка плагина")
+        dialog.show()
+
+    def on_plugin_unload(self):
+        # The runtime also removes any remaining buttons automatically.
+        for button in self.buttons:
+            button.remove()

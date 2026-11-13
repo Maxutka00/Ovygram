@@ -9,6 +9,7 @@ import ast
 import copy
 import hashlib
 import importlib.util
+import inspect
 import io
 import json
 import logging
@@ -26,9 +27,11 @@ from base_plugin import BasePlugin
 from desktop._runtime import Runtime
 from hook_utils import HookCancelled
 from ovygram_deps import Dependencies, normalize_all
+from ovygram_distribution import Distribution
+from ovygram_registry import TRUSTED, protected_author
 from ovygram_package import (MAX_PACKAGE, MAX_SOURCE, SDK_VERSION, archive_path, read_source,
                              read_zip)
-from ui.settings import Input, Selector, Switch
+from ui.settings import Button, Header, Input, Selector, Switch
 
 
 STATE_VERSION = 2
@@ -152,7 +155,7 @@ class PluginContext:
 
 
 class Manager:
-    def __init__(self, root, disabled=False):
+    def __init__(self, root, disabled=False, registry=None):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.packages = self.root / "packages"
@@ -165,6 +168,9 @@ class Manager:
         self.owner = threading.get_ident()
         self.loaded = {}
         self.errors = {}
+        self.setting_actions = {}
+        self.distribution_state = {}
+        self.pending_updates = {}
         self.logger = logging.Logger("ovygram")
         self.log_handler = RotatingFileHandler(
             self.root / "plugins.log", maxBytes=1024 * 1024, backupCount=2,
@@ -176,6 +182,8 @@ class Manager:
         # The SDK lies in python/sdk, next to the bundled interpreter and pip.
         self.dependencies = Dependencies(self.root, Path(__file__).resolve().parent.parent)
         self.records = self.read_state()
+        self.distribution = Distribution(self, registry)
+        self.recover_updates()
         if not (self.disabled or self.recovery):
             for installation_id, record in self.records.items():
                 if record["enabled"]:
@@ -193,7 +201,42 @@ class Manager:
             for installation_id, record in records.items()
         ):
             raise ValueError("Повреждён файл состояния плагинов.")
+        self.distribution_state = state.get("distribution", {})
+        self.pending_updates = state.get("pending_updates", {})
+        if not isinstance(self.pending_updates, dict) or any(
+                identity not in records or not isinstance(previous, dict)
+                or not {"plugin_id", "current", "previous", "enabled", "settings"} <= previous.keys()
+                or previous["plugin_id"] != records[identity]["plugin_id"]
+                for identity, previous in self.pending_updates.items()):
+            raise ValueError("Повреждён журнал обновлений плагинов.")
         return records
+
+    def recover_updates(self):
+        """Before any plugin executes, restore operations lacking a commit.
+
+        The old code/settings snapshot is durable before code is replaced.
+        The existing crash marker still requires the normal recovery consent.
+        """
+        for identity, previous in tuple(self.pending_updates.items()):
+            interrupted = self.records[identity]
+            self.change_record(identity, copy.deepcopy(previous))
+            self.finish_update(identity)
+            keep = {version["directory"] for version in (previous["current"], previous["previous"]) if version}
+            for version in (interrupted["current"], interrupted["previous"]):
+                if version and version["directory"] not in keep:
+                    try:
+                        self.discard(version)
+                    except OSError as error:
+                        self.logger.warning("Не удалось удалить прерванное обновление: %s", error)
+            self.logger.warning("Восстановлена предыдущая версия после прерванного обновления: %s", identity)
+
+    def finish_update(self, identity):
+        previous = self.pending_updates.pop(identity)
+        try:
+            self.save()
+        except BaseException:
+            self.pending_updates[identity] = previous
+            raise
 
     def migrate(self, records):
         """State of the first format, keyed by plugin_id: every plugin
@@ -225,7 +268,8 @@ class Manager:
             raise RuntimeError("Настройки плагина доступны только в главном потоке.")
 
     def save(self):
-        text = json.dumps({"version": STATE_VERSION, "installations": self.records},
+        text = json.dumps({"version": STATE_VERSION, "installations": self.records,
+                           "distribution": self.distribution_state, "pending_updates": self.pending_updates},
                           ensure_ascii=False, allow_nan=False, indent=2)
         temporary = self.state.with_suffix(".tmp")
         with temporary.open("w", encoding="utf-8") as stream:
@@ -307,8 +351,13 @@ class Manager:
                 expected = {name: archive.read(name) for name in read_zip(payload)[1]}
         for name, data in expected.items():
             path = directory.joinpath(*PurePosixPath(name).parts)
-            if not path.is_file() or path.read_bytes() != data:
+            if path.resolve() != path or not path.is_file() or path.read_bytes() != data:
                 raise ValueError(f"Файл {name} плагина изменён после установки. Установите его заново.")
+        for path in directory.rglob("*"):
+            if path.is_symlink() or (path.is_file() and path.relative_to(directory).as_posix() not in expected
+                                    and path.suffix.lower() in (".py", ".pyc", ".pyo", ".so", ".dll", ".pyd", ".ovyplugin")):
+                raise ValueError("В каталоге плагина появился посторонний исполняемый файл.")
+        return expected.get(version["entry"])
 
     def report_error(self, installation_id, message):
         self.errors[installation_id] = message
@@ -325,12 +374,14 @@ class Manager:
         self.runtime.contexts[installation_id] = context
         self.marker.write_text(installation_id, encoding="utf-8")
         try:
+            if version.get("blocked") or self.distribution.registry.cached(version)["status"] == "blocked":
+                raise ValueError("Опасный плагин / вирус: запуск запрещён.")
             requirements = version["metadata"].get("requirements", [])
             if not self.dependencies.satisfied(requirements):
                 if self.dependencies.waiting_for_restart(requirements):
                     raise RuntimeError("Зависимости установлены. Перезапустите клиент.")
                 raise RuntimeError("Зависимости не установлены. Выключите и снова включите плагин.")
-            self.check_integrity(version)
+            checked_source = self.check_integrity(version)
             directory = self.directory(version)
             entry = version["entry"]
             if len(archive_path(entry).parts) != 1:
@@ -343,8 +394,11 @@ class Manager:
             module.__file__ = str(path)
             module.__path__ = [str(directory)]
             sys.modules[namespace] = module
-            with path.open("rb") as stream:
-                source = stream.read(MAX_SOURCE + 1)
+            if checked_source is None:
+                with path.open("rb") as stream:
+                    source = stream.read(MAX_SOURCE + 1)
+            else:
+                source = checked_source
             reader = legacy_metadata if version.get("format") == "legacy" else plugin_metadata
             if reader(source, str(path)) != version["metadata"]:
                 raise ValueError("Метаданные изменились. Импортируйте новую версию из файла.")
@@ -392,6 +446,8 @@ class Manager:
             self.report_error(installation_id, str(error) or type(error).__name__)
             raise RuntimeError("Выгрузка завершилась ошибкой. Перезапустите клиент.") from error
         finally:
+            self.setting_actions = {key: value for key, value in self.setting_actions.items()
+                                    if key[0] != installation_id}
             context.active = False
             self.runtime.remove(installation_id)
             self.clear_modules(namespace)
@@ -444,14 +500,32 @@ class Manager:
         """Installs a file as a new installation, or updates installation_id
         keeping its ID, settings and data. A plugin_id that is already
         installed needs either installation_id or separate=True."""
+        payload = self.read_file(path)
+        metadata, kind = read_package(payload, Path(path).name)
+        return self.install_bytes(payload, metadata, kind, installation_id, separate)
+
+    def install_bytes(self, payload, metadata, kind, installation_id="", separate=False,
+                      trust=None, allow_loss=False):
+        # Callers supply already parsed bytes, never a path fetched a second time.
+        registry = self.distribution.registry
+        trust = trust or {"status": "verification_unavailable"}
+        if trust["status"] == "blocked":
+            raise ValueError("Опасный плагин / вирус: установка запрещена.")
+        plugin_id = metadata["id"]
+        existing = self.installations_of(plugin_id)
+        if trust["status"] in TRUSTED and any(
+                identity != installation_id and registry.cached(self.records[identity]["current"])["status"]
+                in TRUSTED for identity in existing):
+            raise ValueError("Два проверенных экземпляра с одинаковым ID запрещены. Обновите существующий.")
+        previous = self.records.get(installation_id) if installation_id else None
+        if previous and previous["current"].get("trust", {}).get("status") in TRUSTED \
+                and trust["status"] not in TRUSTED and not allow_loss:
+            raise ValueError("Требуется отдельное подтверждение потери проверки.")
         token = uuid.uuid4().hex
         version = {"directory": token}
         directory = self.directory(version)
         directory.mkdir()
         try:
-            payload = self.read_file(path)
-            metadata, kind = read_package(payload, Path(path).name)
-            plugin_id = metadata["id"]
             if installation_id:
                 previous = self.records.get(installation_id)
                 if previous is None:
@@ -469,7 +543,8 @@ class Manager:
             (share / name).write_bytes(payload)
             entry = unpack_package(payload, kind, directory)
             version.update(metadata=metadata, entry=entry, share_file=name, package_type=kind,
-                           sha256=hashlib.sha256(payload).hexdigest())
+                           sha256=hashlib.sha256(payload).hexdigest(), trust=trust,
+                           blocked=False)
             if previous:
                 self.unload(installation_id)
                 previous = self.records[installation_id]
@@ -489,12 +564,52 @@ class Manager:
         self.errors.pop(installation_id, None)
         return installation_id
 
+    def activate_update(self, installation_id, package):
+        """Keep the last working code and restore its complete state if activation fails."""
+        old = copy.deepcopy(self.records[installation_id])
+        self.pending_updates[installation_id] = old
+        try:
+            self.save()
+        except BaseException:
+            self.pending_updates.pop(installation_id)
+            raise
+        # install_bytes normally discards the older backup. Retain it until the
+        # new version has successfully loaded and its state has been saved.
+        self.records[installation_id]["previous"] = None
+        try:
+            self.install_bytes(package["payload"], package["metadata"], package["package_type"],
+                               installation_id, trust=package["trust"])
+            if old["enabled"]:
+                self.enable(installation_id)
+                if installation_id not in self.loaded:
+                    raise RuntimeError("Обновление не запущено. Сохранена предыдущая версия.")
+            self.finish_update(installation_id)
+        except BaseException:
+            failed = self.records[installation_id]
+            if installation_id in self.loaded:
+                self.unload(installation_id)
+            self.change_record(installation_id, old)
+            if failed["current"]["directory"] != old["current"]["directory"]:
+                self.discard(failed["current"])
+            if old["enabled"] and not self.restart_required:
+                self.load(installation_id)
+            if installation_id in self.pending_updates:
+                self.finish_update(installation_id)
+            raise
+        try:
+            self.discard(old["previous"])
+        except OSError as error:
+            self.logger.warning("Не удалось удалить старую резервную копию: %s", error)
+
     def enable(self, installation_id):
         if self.disabled or self.recovery or self.restart_required:
             raise RuntimeError("Запуск плагинов сейчас отключён.")
         if installation_id in self.loaded:
             return
         record = self.records[installation_id]
+        if record["current"].get("blocked") or self.distribution.registry.cached(
+                record["current"])["status"] == "blocked":
+            raise ValueError("Опасный плагин / вирус: запуск запрещён.")
         requirements = record["current"]["metadata"].get("requirements", [])
         if not self.dependencies.satisfied(requirements):
             if self.dependencies.waiting_for_restart(requirements):
@@ -546,6 +661,13 @@ class Manager:
         record = self.records[installation_id]
         if not record["previous"]:
             raise ValueError("Предыдущая версия отсутствует.")
+        self.check_integrity(record["previous"])
+        trust = self.distribution.registry.cached(record["previous"])
+        if trust["status"] == "blocked" or record["previous"].get("blocked"):
+            raise ValueError("Предыдущая версия заблокирована.")
+        if record["current"].get("blocked") or self.distribution.registry.cached(
+                record["current"])["status"] == "revoked":
+            raise ValueError("Для безопасного отката сначала проверьте обновления через сервер.")
         self.disable(installation_id)
         record = self.records[installation_id]
         self.change_record(installation_id, {
@@ -556,6 +678,12 @@ class Manager:
 
     def remove(self, installation_id, keep_data=False):
         record = self.records[installation_id]
+        if keep_data:
+            saved = self.root / "retained" / installation_id
+            saved.mkdir(parents=True, exist_ok=True)
+            (saved / "settings.json").write_text(json.dumps({
+                "plugin_id": record["plugin_id"], "settings": record["settings"],
+                "account_settings": record.get("account_settings", {})}, ensure_ascii=False), encoding="utf-8")
         self.disable(installation_id)
         self.change_record(installation_id, None)
         self.discard(record["current"])
@@ -604,15 +732,28 @@ class Manager:
         instance, context, _ = self.loaded[installation_id]
         result = []
         keys = set()
+        actions = {}
         for item in self.call(installation_id, instance.create_settings):
-            if (not isinstance(item, (Switch, Input, Selector))
+            if isinstance(item, Header):
+                if not isinstance(item.text, str) or not item.text:
+                    raise ValueError("Подраздел настроек требует непустой заголовок.")
+                result.append({"kind": "header", "text": item.text})
+                continue
+            if (not isinstance(item, (Switch, Input, Selector, Button))
                 or not isinstance(item.key, str) or not 0 < len(item.key) <= 128
                 or not isinstance(item.text, str) or item.key in keys):
                 raise ValueError("Некорректное описание настройки.")
             keys.add(item.key)
-            value = context.get(item.key, item.default)
+            value = None if isinstance(item, Button) else context.get(item.key, item.default)
             field = {"key": item.key, "text": item.text}
-            if isinstance(item, Switch):
+            if isinstance(item, Button):
+                if not callable(item.on_click):
+                    raise ValueError("Кнопка настроек требует обработчик нажатия.")
+                previous = self.setting_actions.get((installation_id, item.key))
+                token = previous["token"] if previous and previous["context"] is context else uuid.uuid4().hex
+                actions[(installation_id, item.key)] = {"token": token, "context": context, "callback": item.on_click}
+                field.update(kind="button", action_id=token)
+            elif isinstance(item, Switch):
                 field.update(kind="switch", value=bool(value))
             elif isinstance(item, Input):
                 field.update(kind="input", value=str(value))
@@ -622,10 +763,23 @@ class Manager:
                 index = value if type(value) is int and 0 <= value < len(item.items) else 0
                 field.update(kind="selector", value=index, items=item.items)
             result.append(field)
+        self.setting_actions = {key: value for key, value in self.setting_actions.items()
+                                if key[0] != installation_id}
+        self.setting_actions.update(actions)
         return result
 
+    def settings_action(self, installation_id, action_id):
+        action = next((entry for (identity, _), entry in self.setting_actions.items()
+                       if identity == installation_id and entry["token"] == action_id), None)
+        if action is None or not action["context"].active or installation_id not in self.loaded:
+            raise ValueError("Кнопка настроек устарела или плагин выключен.")
+        result = self.call(installation_id, action["callback"])
+        if inspect.iscoroutine(result):
+            self.runtime.schedule(action["context"], result)
+
     def save_settings(self, installation_id, values):
-        fields = self.settings(installation_id)
+        fields = [field for field in self.settings(installation_id)
+                  if field["kind"] in ("switch", "input", "selector")]
         if values.keys() != {field["key"] for field in fields}:
             raise ValueError("Набор настроек изменился. Откройте диалог заново.")
         for field in fields:
@@ -642,7 +796,13 @@ class Manager:
     def describe(self, installation_id):
         record = self.records[installation_id]
         version = record["current"]
+        trust = self.distribution.registry.cached(version)
+        author_hidden = protected_author(version["metadata"]["author"], trust["status"])
         return {**version["metadata"], "installation_id": installation_id,
+                "trust": trust, "display_author": "Неизвестный автор" if author_hidden else version["metadata"]["author"],
+                "author_hidden": author_hidden,
+                "previously_trusted": version.get("trust", {}).get("status") in TRUSTED,
+                "update": self.distribution.offers.get(installation_id),
                 "plugin_id": record["plugin_id"], "enabled": record["enabled"],
                 "sha256": version.get("sha256"), "package_type": version.get("package_type"),
                 "legacy": version.get("format") == "legacy"}
@@ -656,6 +816,7 @@ class Manager:
             "restart_required": self.restart_required,
             "log_path": str(self.root / "plugins.log"),
             "dependencies": dependencies,
+            "distribution": self.distribution.status(),
             "plugins": [
                 {**self.describe(installation_id),
                  "installing": dependencies["installing"] == installation_id,
@@ -672,15 +833,24 @@ class Manager:
         self.check_thread()
         action = json.loads(request)
         name = action.pop("action")
-        if name in ("snapshot", "client_event", "ui_event"):
+        if name in ("snapshot", "poll", "client_event", "ui_event"):
             # A finished dependency installation starts its plugin here, on
             # the main thread and outside of any hook.
             self.dependencies.poll()
+            self.distribution.poll()
         allowed = {
+            "poll": self.poll_distribution,
+            "prepare_install": self.distribution.prepare,
+            "prepared_install": self.distribution.prepared,
+            "commit_install": self.distribution.commit,
+            "discard_install": self.distribution.discard,
+            "check_updates": lambda: self.distribution.start_check(manual=True),
+            "apply_update": self.distribution.apply_offer,
             "snapshot": self.snapshot, "inspect": self.inspect, "install": self.install,
             "enable": self.enable,
             "disable": self.disable, "rollback": self.rollback, "remove": self.remove,
             "resume": self.resume, "settings": self.settings, "save_settings": self.save_settings,
+            "settings_action": self.settings_action,
             "share_file": self.share_file,
             "client_reply": self.runtime.complete,
             "client_pending": self.runtime.is_pending,
@@ -705,6 +875,7 @@ class Manager:
 
     def shutdown(self):
         self.check_thread()
+        self.distribution.close()
         for installation_id in reversed(tuple(self.loaded)):
             try:
                 self.unload(installation_id)
@@ -717,3 +888,9 @@ class Manager:
         if not (self.recovery or self.disabled):
             self.marker.unlink(missing_ok=True)
         self.log_handler.close()
+
+    def poll_distribution(self):
+        self.distribution.start_check()
+        self.distribution.poll()
+        notices, self.distribution.notices = self.distribution.notices, []
+        return notices

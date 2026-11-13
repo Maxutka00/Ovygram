@@ -1,0 +1,7 @@
+{
+  "server_url": "https://registry.example.org",
+  "index_url": "https://raw.githubusercontent.com/ORG/REPO/main/index.json",
+  "public_keys": {
+    "SHA256_OF_RAW_PUBLIC_KEY_FIRST_16_HEX": "BASE64_OF_RAW_32_BYTE_ED25519_PUBLIC_KEY"
+  }
+}

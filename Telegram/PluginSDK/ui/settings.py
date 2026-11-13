@@ -1,4 +1,17 @@
 from dataclasses import dataclass
+from collections.abc import Callable
+
+
+@dataclass(frozen=True)
+class Header:
+    text: str
+
+
+@dataclass(frozen=True)
+class Button:
+    key: str
+    text: str
+    on_click: Callable[[], object]
 
 
 @dataclass(frozen=True)

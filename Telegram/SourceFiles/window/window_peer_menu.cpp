@@ -4389,7 +4389,11 @@ void FillDialogsEntryMenu(
 		const PeerMenuCallback &callback) {
 	Filler(controller, request, callback).fill();
 #ifdef OVYGRAM_ENABLED
-	Ovygram::FillChatMenu(request.key.peer(), callback);
+	if (request.section == Dialogs::EntryState::Section::Profile) {
+		Ovygram::FillProfileMenu(request.key.peer(), callback);
+	} else {
+		Ovygram::FillChatMenu(request.key.peer(), callback);
+	}
 #endif // OVYGRAM_ENABLED
 }
 

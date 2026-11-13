@@ -61,6 +61,8 @@ class PluginRuntimeTests(unittest.TestCase):
         self.addCleanup(manager.shutdown)
         plugin_id = manager.install(str(EXAMPLE))
         manager.records[plugin_id]["current"].pop("share_file")
+        # Simulate a pre-hash installation, whose original package wasn't kept.
+        manager.records[plugin_id]["current"].pop("sha256")
         archive = self.root / "lifecycle.ovyzip"
         source = EXAMPLE.read_text(encoding="utf-8").replace("1.0.0", "2.0.0")
         with zipfile.ZipFile(archive, "w") as package:
@@ -160,6 +162,42 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(len(info["sha256"]), 64)
         self.assertEqual(info["installations"], [])
         self.assertEqual(self.manager.records, {})
+
+    def test_setting_headers_and_buttons_keep_owner_and_reject_stale_clicks(self):
+        source = self.root / "settings_actions.ovyplugin"
+        source.write_text('''from base_plugin import BasePlugin
+from ui.settings import Button, Header, Input
+__id__ = "settings_actions"
+__name__ = "Settings actions"
+__description__ = "Settings action test"
+__author__ = "Test"
+__version__ = "1.0"
+__release__ = False
+__platform__ = "desktop"
+__desktop_sdk__ = 2
+class SettingsPlugin(BasePlugin):
+    def create_settings(self):
+        return [Header("Section"), Button("action", "Run", self.clicked), Input("name", "Name", "Default")]
+    def clicked(self):
+        self.set_setting("clicked", self.get_setting("clicked", 0) + 1)
+''', encoding="utf-8")
+        first = self.manager.install(str(source))
+        second = self.manager.install(str(source), separate=True)
+        self.manager.enable(first)
+        self.manager.enable(second)
+        fields = self.manager.settings(first)
+        self.assertEqual([field["kind"] for field in fields], ["header", "button", "input"])
+        action = fields[1]["action_id"]
+        with self.assertRaisesRegex(ValueError, "устарела"):
+            self.manager.settings_action(second, action)
+        self.manager.save_settings(first, {"name": "Changed"})
+        self.manager.settings_action(first, action)
+        self.assertEqual(self.manager.records[first]["settings"]["clicked"], 1)
+        self.assertNotIn("clicked", self.manager.records[second]["settings"])
+        self.manager.disable(first)
+        self.manager.enable(first)
+        with self.assertRaisesRegex(ValueError, "устарела"):
+            self.manager.settings_action(first, action)
 
     def test_two_installations_of_one_id_are_isolated(self):
         first = self.manager.install(str(self.copy()))

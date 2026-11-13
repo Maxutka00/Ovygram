@@ -228,6 +228,31 @@ class RuntimeTests(unittest.TestCase):
         self.manager.enable(self.a)
         self.assertFalse(self.runtime.registrations)
 
+    def test_cancellation_before_first_step_closes_plugin_coroutine(self):
+        import inspect
+        import threading
+        loop = self.runtime.ensure_loop()
+        entered, release, drained = threading.Event(), threading.Event(), threading.Event()
+
+        def barrier():
+            entered.set()
+            release.wait(timeout=2)
+
+        async def operation():
+            self.fail("Cancelled plugin coroutine must never run")
+
+        loop.call_soon_threadsafe(barrier)
+        self.assertTrue(entered.wait(timeout=2))
+        coroutine = operation()
+        try:
+            future = self.runtime.schedule(self.plugins[self.a], coroutine)
+            self.assertTrue(future.cancel())
+            loop.call_soon_threadsafe(drained.set)
+        finally:
+            release.set()
+        self.assertTrue(drained.wait(timeout=2))
+        self.assertEqual(inspect.getcoroutinestate(coroutine), inspect.CORO_CLOSED)
+
     def test_ui_callback_runs_on_owner_thread_and_keeps_python_result(self):
         current_thread = __import__("threading").get_ident()
 

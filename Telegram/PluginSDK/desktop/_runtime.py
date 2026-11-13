@@ -270,6 +270,21 @@ class Runtime:
         with self.lock:
             self.tasks.setdefault(plugin_context.installation_id, set()).add(future)
         future.add_done_callback(lambda done: self.task_finished(plugin_context.installation_id, done))
+
+        def close_unstarted():
+            # A Task cancelled before its first step never enters managed(),
+            # so it cannot close the nested plugin coroutine itself.
+            if inspect.iscoroutine(coroutine) and inspect.getcoroutinestate(coroutine) == inspect.CORO_CREATED:
+                coroutine.close()
+
+        def cancelled(done):
+            if done.cancelled():
+                try:
+                    loop.call_soon_threadsafe(close_unstarted)
+                except RuntimeError:
+                    close_unstarted()  # The loop is already closed.
+
+        future.add_done_callback(cancelled)
         return future
 
     def task_finished(self, installation_id, future):
@@ -356,7 +371,7 @@ class Runtime:
         if event.get("type") == "element_click":
             self.element_click(event)
             return
-        if event.get("type") in ("widget_click", "key", "compose_changed", "menu_click",
+        if event.get("type") in ("widget_click", "key", "compose_changed", "menu_click", "panel_button_click",
                                   "native_window", "native_signal"):
             self.widget_rule_event(event)
             return

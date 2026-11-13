@@ -6,6 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_document_resolver.h"
+#ifdef OVYGRAM_ENABLED
+#include "ovygram/plugin_install.h"
+#endif // OVYGRAM_ENABLED
 
 #include "base/platform/base_platform_info.h"
 #include "boxes/abstract_box.h" // Ui::show().
@@ -92,6 +95,13 @@ void LaunchWithWarning(
 		// not_null<Window::Controller*> controller,
 		const QString &name,
 		HistoryItem *item) {
+#ifdef OVYGRAM_ENABLED
+	if (name.endsWith(u".ovyplugin"_q, Qt::CaseInsensitive)
+		|| name.endsWith(u".ovyzip"_q, Qt::CaseInsensitive)) {
+		Ovygram::ShowPluginInstall(name);
+		return;
+	}
+#endif // OVYGRAM_ENABLED
 	const auto type = Core::DetectLaunchType(name);
 	const auto nameType = type.nameType;
 	const auto extension = type.extension;

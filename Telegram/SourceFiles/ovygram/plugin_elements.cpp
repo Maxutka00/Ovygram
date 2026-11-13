@@ -1,4 +1,5 @@
 #include "ovygram/plugin_elements.h"
+#include "ovygram/plugin_install.h"
 
 #include "ui/style/style_core.h"
 #include "ui/widgets/fields/input_field.h"
@@ -128,6 +129,7 @@ void ApplyAll(const QString &name) {
 }
 
 bool Filter::eventFilter(QObject *watched, QEvent *e) {
+	if (InstallationUiActive()) return false;
 	const auto type = e->type();
 	if (type == QEvent::Show) {
 		const auto element = Find(watched);

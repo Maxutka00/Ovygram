@@ -3,6 +3,7 @@
 #include "core/application.h"
 #include "core/file_utilities.h"
 #include "core/plugin_runtime.h"
+#include "ovygram/plugin_install.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "settings/settings_common_session.h"
@@ -150,7 +151,7 @@ void AddNotice(
 [[nodiscard]] QString PluginMetadata(const QJsonObject &plugin) {
 	auto result = u"Версия %1 · %2 · %3"_q.arg(
 		plugin.value(u"version"_q).toString().simplified(),
-		plugin.value(u"author"_q).toString().simplified(),
+		plugin.value(u"display_author"_q).toString(plugin.value(u"author"_q).toString()).simplified(),
 		plugin.value(u"plugin_id"_q).toString());
 	// Installations of one plugin ID differ by their installation_id.
 	if (plugin.value(u"instances"_q).toInt() > 1) {
@@ -158,6 +159,16 @@ void AddNotice(
 			plugin.value(u"installation_id"_q).toString().left(8));
 	}
 	return result;
+}
+
+[[nodiscard]] QString TrustStatus(const QJsonObject &plugin) {
+	const auto status = plugin.value(u"trust"_q).toObject().value(u"status"_q).toString();
+	if (status == u"verified"_q) return u"Проверенный плагин"_q;
+	if (status == u"official"_q) return u"Официальный плагин"_q;
+	if (status == u"blocked"_q) return u"Опасный плагин / вирус — запуск запрещён"_q;
+	if (status == u"revoked"_q) return u"Непроверенный плагин — проверка отозвана"_q;
+	if (status == u"verification_unavailable"_q) return u"Сервер не отвечает — невозможно проверить плагин"_q;
+	return u"Непроверенный плагин"_q;
 }
 
 [[nodiscard]] QString DescriptionPreview(const QString &description) {
@@ -182,7 +193,7 @@ void AddNotice(
 	return card;
 }
 
-void AddCardLabel(
+not_null<Ui::FlatLabel*> AddCardLabel(
 		not_null<Ui::VerticalLayout*> card,
 		QString text,
 		const style::FlatLabel &style = st::defaultFlatLabel) {
@@ -190,6 +201,16 @@ void AddCardLabel(
 		object_ptr<Ui::FlatLabel>(card, std::move(text), style),
 		st::settingsPluginTextMargin);
 	label->setBreakEverywhere(true);
+	return label;
+}
+
+void AddTrustMetadata(not_null<Ui::VerticalLayout*> card, const QJsonObject &plugin) {
+	const auto author = AddCardLabel(card, PluginMetadata(plugin), st::settingsPluginCardMeta);
+	if (plugin.value(u"author_hidden"_q).toBool()) author->setTextColorOverride(QColor(u"#b00020"_q));
+	const auto status = plugin.value(u"trust"_q).toObject().value(u"status"_q).toString();
+	const auto badge = AddCardLabel(card, TrustStatus(plugin), st::settingsPluginCardMeta);
+	badge->setTextColorOverride(QColor(status == u"official"_q ? u"#1565c0"_q
+		: status == u"verified"_q ? u"#188038"_q : u"#b00020"_q));
 }
 
 class PluginButtonRow final : public Ui::RpWidget {
@@ -268,15 +289,14 @@ void AddCardActions(
 
 void ConfirmRemove(
 		not_null<Window::SessionController*> controller,
-		Fn<void()> remove) {
-	controller->show(Ui::MakeConfirmBox({
-		.text = rpl::single(u"Удалить этот плагин, его настройки и данные?"_q),
-		.confirmed = [=](Fn<void()> close) {
-			close();
-			remove();
-		},
-		.confirmText = tr::lng_box_delete(),
-		.confirmStyle = &st::attentionBoxButton,
+		Fn<void(bool)> remove) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setTitle(rpl::single(u"Удаление плагина"_q));
+		box->addRow(object_ptr<Ui::FlatLabel>(box,
+			rpl::single(u"Сохранить настройки и данные этого экземпляра?"_q), st::boxLabel));
+		box->addButton(rpl::single(u"Сохранить данные"_q), [=] { box->closeBox(); remove(true); });
+		box->addButton(rpl::single(u"Удалить всё"_q), [=] { box->closeBox(); remove(false); });
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 	}));
 }
 
@@ -294,51 +314,6 @@ void SharePlugin(
 	}
 }
 
-[[nodiscard]] QString PluginLine(const QJsonObject &plugin) {
-	return u"%1 %2 · %3"_q.arg(
-		plugin.value(u"name"_q).toString().simplified(),
-		plugin.value(u"version"_q).toString().simplified(),
-		plugin.value(u"author"_q).toString().simplified());
-}
-
-// A file whose plugin ID is already installed: update an installation,
-// install it separately with its own settings, or cancel (spec §12.2).
-void SamePluginBox(
-		not_null<Ui::GenericBox*> box,
-		QJsonObject info,
-		Fn<void(QString installationId, bool separate)> done) {
-	const auto metadata = info.value(u"metadata"_q).toObject();
-	const auto installations = info.value(u"installations"_q).toArray();
-	box->setTitle(rpl::single(u"Плагин уже установлен"_q));
-	auto text = u"Новый файл: %1\nID: %2\n\nУстановлено:"_q.arg(
-		PluginLine(metadata),
-		metadata.value(u"id"_q).toString());
-	for (const auto &entry : installations) {
-		text += u"\n• "_q + PluginLine(entry.toObject());
-	}
-	if (installations.size() > 1) {
-		text += u"\n\nЧтобы обновить один из экземпляров, откройте его страницу "
-			"и нажмите «Обновить из файла»."_q;
-	}
-	box->addRow(object_ptr<Ui::FlatLabel>(
-		box,
-		rpl::single(text),
-		st::boxLabel));
-	if (installations.size() == 1) {
-		const auto id = installations.first().toObject().value(
-			u"installation_id"_q).toString();
-		box->addButton(rpl::single(u"Обновить"_q), [=] {
-			box->closeBox();
-			done(id, false);
-		});
-	}
-	box->addButton(rpl::single(u"Установить отдельно"_q), [=] {
-		box->closeBox();
-		done(QString(), true);
-	});
-	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
-}
-
 class PluginDetails final : public AbstractSection {
 public:
 	PluginDetails(
@@ -354,7 +329,7 @@ public:
 
 private:
 	void refresh();
-	void operate(const QString &action);
+	void operate(const QString &action, bool keepData = false);
 	void installUpdate();
 	void addSettings(const QJsonArray &fields);
 	void pollWhileInstalling(const QJsonObject &snapshot);
@@ -441,10 +416,10 @@ void PluginDetails::refresh() {
 	const auto enabled = plugin.value(u"enabled"_q).toBool();
 	const auto card = AddCard(_content);
 	AddPluginHeader(card, PluginStatus(plugin), nullptr, enabled,
-		!status.isEmpty(), [=, this] {
+		!status.isEmpty() || plugin.value(u"trust"_q).toObject().value(u"status"_q).toString() == u"blocked"_q, [=, this] {
 			operate(enabled ? u"disable"_q : u"enable"_q);
 		});
-	AddCardLabel(card, PluginMetadata(plugin), st::settingsPluginCardMeta);
+	AddTrustMetadata(card, plugin);
 	AddCardLabel(card, plugin.value(u"description"_q).toString());
 	if (const auto line = DependencyLine(plugin); !line.isEmpty()) {
 		AddCardLabel(card, line, st::settingsPluginCardMeta);
@@ -475,6 +450,12 @@ void PluginDetails::refresh() {
 	Ui::AddSkip(_content);
 	Ui::AddSubsectionTitle(_content, rpl::single(u"Управление плагином"_q));
 	AddAction(_content, u"Обновить из файла"_q, [this] { installUpdate(); });
+	if (plugin.value(u"update"_q).isObject()) {
+		const auto offer = plugin.value(u"update"_q).toObject();
+		AddAction(_content, offer.value(u"rollback"_q).toBool()
+			? u"Установить предыдущую безопасную версию"_q : u"Обновить из реестра"_q,
+			[this] { operate(u"apply_update"_q); });
+	}
 	if (plugin.value(u"previous"_q).toBool()) {
 		AddAction(_content, u"Откатить"_q, [this] { operate(u"rollback"_q); });
 	}
@@ -482,15 +463,15 @@ void PluginDetails::refresh() {
 		AddCard(_content),
 		[this] { SharePlugin(controller(), _installationId, _notice); },
 		[this] {
-			ConfirmRemove(controller(), crl::guard(this, [this] {
-				operate(u"remove"_q);
+			ConfirmRemove(controller(), crl::guard(this, [this](bool keepData) {
+				operate(u"remove"_q, keepData);
 			}));
 		});
 	Ui::AddSkip(_content);
 }
 
 void PluginDetails::pollWhileInstalling(const QJsonObject &snapshot) {
-	if (InstallingDependencies(snapshot) && !_polling) {
+	if ((InstallingDependencies(snapshot) || snapshot.value(u"distribution"_q).toObject().value(u"busy"_q).toBool()) && !_polling) {
 		_polling = true;
 		QTimer::singleShot(kDependencyPoll, this, [this] {
 			_polling = false;
@@ -499,11 +480,12 @@ void PluginDetails::pollWhileInstalling(const QJsonObject &snapshot) {
 	}
 }
 
-void PluginDetails::operate(const QString &action) {
-	const auto result = Request({
-		{ u"action"_q, action },
-		{ u"installation_id"_q, _installationId },
-	}, _notice);
+void PluginDetails::operate(const QString &action, bool keepData) {
+	const auto result = Request([&] {
+		auto request = QJsonObject{ { u"action"_q, action }, { u"installation_id"_q, _installationId } };
+		if (action == u"remove"_q) request.insert(u"keep_data"_q, keepData);
+		return request;
+	}(), _notice);
 	const auto succeeded = !result.isUndefined();
 	QTimer::singleShot(0, this, [=, this] {
 		if (succeeded && action == u"remove"_q) {
@@ -518,18 +500,11 @@ void PluginDetails::operate(const QString &action) {
 }
 
 void PluginDetails::installUpdate() {
-	FileDialog::GetOpenPath(
-		this,
-		u"Выбрать файл плагина"_q,
-		kPluginFilter,
+	FileDialog::GetOpenPath(this, u"Выбрать файл плагина"_q, kPluginFilter,
 		crl::guard(this, [this](const FileDialog::OpenResult &files) {
-			if (!files.paths.isEmpty() && !Request({
-				{ u"action"_q, u"install"_q },
-				{ u"path"_q, files.paths.front() },
-				{ u"installation_id"_q, _installationId },
-			}, _notice).isUndefined()) {
-				_notice = QString();
-				refresh();
+			if (!files.paths.isEmpty()) {
+				Ovygram::ShowPluginInstall(files.paths.front(), _installationId,
+					crl::guard(this, [this] { refresh(); }));
 			}
 		}));
 }
@@ -547,7 +522,16 @@ void PluginDetails::addSettings(const QJsonArray &fields) {
 		const auto text = field.value(u"text"_q).toString();
 		const auto initial = field.value(u"value"_q);
 		const auto key = field.value(u"key"_q).toString();
-		if (kind == u"switch"_q) {
+		if (kind == u"header"_q) {
+			Ui::AddSubsectionTitle(_content, rpl::single(text));
+		} else if (kind == u"button"_q) {
+			AddAction(_content, text, [=, this] {
+				(void)Request({ { u"action"_q, u"settings_action"_q },
+					{ u"installation_id"_q, _installationId },
+					{ u"action_id"_q, field.value(u"action_id"_q) } }, _notice);
+				QTimer::singleShot(0, this, [this] { refresh(); });
+			});
+		} else if (kind == u"switch"_q) {
 			const auto button = _content->add(object_ptr<Ui::SettingsButton>(
 				_content,
 				rpl::single(text),
@@ -608,11 +592,7 @@ private:
 	void refresh();
 	void populate();
 	void install();
-	void installFile(
-		const QString &path,
-		const QString &installationId,
-		bool separate);
-	void operate(const QString &id, const QString &action);
+	void operate(const QString &id, const QString &action, bool keepData = false);
 
 	std::unique_ptr<Ui::SearchFieldController> _search;
 	Ui::VerticalLayout *_content = nullptr;
@@ -633,6 +613,10 @@ Plugins::Plugins(
 	setNavigationAnchor(layout);
 	AddNotice(layout, _notice);
 	AddAction(layout, u"Импортировать плагин"_q, [this] { install(); }, st::settingsPluginImport);
+	AddAction(layout, u"Проверить обновления"_q, [this] {
+		(void)Request({ { u"action"_q, u"check_updates"_q } }, _notice);
+		refresh();
+	});
 	_content = layout->add(object_ptr<Ui::VerticalLayout>(layout));
 	Ui::ResizeFitChild(this, layout);
 
@@ -656,7 +640,7 @@ void Plugins::refresh() {
 	_snapshot = Request({ { u"action"_q, u"snapshot"_q } }, _notice).toObject();
 	populate();
 	// The plugin starts when its libraries are installed in the background.
-	if (InstallingDependencies(_snapshot) && !_polling) {
+	if ((InstallingDependencies(_snapshot) || _snapshot.value(u"distribution"_q).toObject().value(u"busy"_q).toBool()) && !_polling) {
 		_polling = true;
 		QTimer::singleShot(kDependencyPoll, this, [this] {
 			_polling = false;
@@ -670,6 +654,9 @@ void Plugins::populate() {
 	Clear(_content);
 	if (_snapshot.isEmpty()) {
 		return;
+	}
+	for (const auto &notice : _snapshot.value(u"distribution"_q).toObject().value(u"notices"_q).toArray()) {
+		Ui::AddDividerText(_content, rpl::single(notice.toString()));
 	}
 	const auto status = RuntimeStatus(_snapshot);
 	if (!status.isEmpty()) {
@@ -710,9 +697,9 @@ void Plugins::populate() {
 		AddPluginHeader(
 			card, name,
 			[=, this] { showOther(PluginDetails::Id(id, name)); },
-			enabled, !status.isEmpty(),
+			enabled, !status.isEmpty() || plugin.value(u"trust"_q).toObject().value(u"status"_q).toString() == u"blocked"_q,
 			[=, this] { operate(id, enabled ? u"disable"_q : u"enable"_q); });
-		AddCardLabel(card, PluginMetadata(plugin), st::settingsPluginCardMeta);
+		AddTrustMetadata(card, plugin);
 		AddCardLabel(card, DescriptionPreview(plugin.value(u"description"_q).toString()));
 		if (const auto line = DependencyLine(plugin); !line.isEmpty()) {
 			AddCardLabel(card, line, st::settingsPluginCardMeta);
@@ -724,8 +711,8 @@ void Plugins::populate() {
 			card,
 			[=, this] { SharePlugin(controller(), id, _notice); },
 			[=, this] {
-				ConfirmRemove(controller(), crl::guard(this, [=, this] {
-					operate(id, u"remove"_q);
+				ConfirmRemove(controller(), crl::guard(this, [=, this](bool keepData) {
+					operate(id, u"remove"_q, keepData);
 				}));
 			});
 	}
@@ -745,63 +732,24 @@ void Plugins::populate() {
 	Ui::AddSkip(_content);
 }
 
-void Plugins::operate(const QString &id, const QString &action) {
+void Plugins::operate(const QString &id, const QString &action, bool keepData) {
 	_notice = QString();
-	(void)Request({
-		{ u"action"_q, action },
-		{ u"installation_id"_q, id },
-	}, _notice);
+	(void)Request([&] {
+		auto request = QJsonObject{ { u"action"_q, action }, { u"installation_id"_q, id } };
+		if (action == u"remove"_q) request.insert(u"keep_data"_q, keepData);
+		return request;
+	}(), _notice);
 	QTimer::singleShot(0, this, [this] { refresh(); });
 }
 
 void Plugins::install() {
-	FileDialog::GetOpenPath(
-		this,
-		u"Выбрать файл плагина"_q,
-		kPluginFilter,
+	FileDialog::GetOpenPath(this, u"Выбрать файл плагина"_q, kPluginFilter,
 		crl::guard(this, [this](const FileDialog::OpenResult &files) {
-			if (files.paths.isEmpty()) {
-				return;
+			if (!files.paths.isEmpty()) {
+				Ovygram::ShowPluginInstall(files.paths.front(), QString(),
+					crl::guard(this, [this] { refresh(); }));
 			}
-			const auto path = files.paths.front();
-			const auto info = Request({
-				{ u"action"_q, u"inspect"_q },
-				{ u"path"_q, path },
-			}, _notice).toObject();
-			if (info.isEmpty()) {
-				return;
-			}
-			if (info.value(u"installations"_q).toArray().isEmpty()) {
-				installFile(path, QString(), false);
-				return;
-			}
-			controller()->show(Box(
-				SamePluginBox,
-				info,
-				crl::guard(this, [=](QString installationId, bool separate) {
-					installFile(path, installationId, separate);
-				})));
 		}));
-}
-
-void Plugins::installFile(
-		const QString &path,
-		const QString &installationId,
-		bool separate) {
-	auto request = QJsonObject{
-		{ u"action"_q, u"install"_q },
-		{ u"path"_q, path },
-		{ u"separate"_q, separate },
-	};
-	if (!installationId.isEmpty()) {
-		request.insert(u"installation_id"_q, installationId);
-	}
-	if (!Request(request, _notice).isUndefined()) {
-		_notice = installationId.isEmpty()
-			? u"Плагин импортирован. Он выключен."_q
-			: u"Плагин обновлён. Он выключен."_q;
-		refresh();
-	}
 }
 
 } // namespace

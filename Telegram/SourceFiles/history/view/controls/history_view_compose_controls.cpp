@@ -143,6 +143,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #ifdef OVYGRAM_ENABLED
 #include "ovygram/plugin_elements.h"
+#include "ovygram/plugin_panel_buttons.h"
 #endif // OVYGRAM_ENABLED
 
 namespace HistoryView {
@@ -2847,6 +2848,9 @@ void ComposeControls::init() {
 	}
 	_tabbedSelectorToggle->setAccessibleName(tr::lng_emoji_sticker_gif(tr::now));
 #ifdef OVYGRAM_ENABLED
+	Ovygram::PanelButtons::RegisterHost(_wrap.get(), u"compose"_q, [this] {
+		updateControlsGeometry(_wrap->size());
+	});
 	Ovygram::RegisterElements({
 		{ "compose.attach", _attachToggle },
 		{ "compose.emoji", _tabbedSelectorToggle.get() },
@@ -5048,7 +5052,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		&& !_commentsShown->isHidden();
 	const auto giftToUser = _giftToUser
 		&& !_giftToUser->isHidden();
-	const auto fieldWidth = size.width()
+	const auto nativeFieldWidth = size.width()
 		- (commentsShown
 			? (_commentsShown->width() + _st.commentsSkip)
 			: 0)
@@ -5080,6 +5084,17 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		- (_starsReaction
 			? (_st.starsSkip + _starsReaction->width())
 			: 0);
+#ifdef OVYGRAM_ENABLED
+	const auto panelPeer = (_history && !_hidden.current() && !_recording.current()
+		&& !_field->isHidden() && !hideExtraButtons()) ? _history->peer.get() : nullptr;
+	const auto panelBudget = std::max(0, std::min(size.width() / 3,
+		nativeFieldWidth - 2 * _st.attach.height));
+	const auto panelWidth = Ovygram::PanelButtons::Prepare(
+		_wrap.get(), panelPeer, panelBudget, _st.attach.height);
+#else // OVYGRAM_ENABLED
+	const auto panelWidth = 0;
+#endif // OVYGRAM_ENABLED
+	const auto fieldWidth = nativeFieldWidth - panelWidth;
 	{
 		_field->resizeToWidth(fieldWidth);
 		if (_richDraftPreview) {
@@ -5120,6 +5135,11 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		_sendAs->moveToLeft(left, buttonsTop);
 		left += _sendAs->width();
 	}
+
+#ifdef OVYGRAM_ENABLED
+	Ovygram::PanelButtons::Place(_wrap.get(), left, buttonsTop, _st.attach.height);
+#endif // OVYGRAM_ENABLED
+	left += panelWidth;
 	const auto fieldHeight = composeFieldHeight();
 	const auto fieldTop = size.height() - _st.padding.bottom() - fieldHeight;
 	_field->moveToLeft(left, fieldTop);
@@ -5266,6 +5286,7 @@ void ComposeControls::updateControlsVisibility() {
 	updateDiscardRichDraftVisibility();
 #ifdef OVYGRAM_ENABLED
 	Ovygram::ApplyElementRules(_wrap.get()); // The elements are its children.
+	updateControlsGeometry(_wrap->size());
 #endif // OVYGRAM_ENABLED
 }
 

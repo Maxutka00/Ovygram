@@ -36,6 +36,9 @@ void FillMainMenu(
 // The chat menu: "⋮" in the chat top bar and the chat list context menu.
 void FillChatMenu(PeerData *peer, const Ui::Menu::MenuCallback &addAction);
 
+// The profile's own menu, distinct from the chat menu.
+void FillProfileMenu(PeerData *peer, const Ui::Menu::MenuCallback &addAction);
+
 // The message context menu in a chat.
 void FillMessageMenu(not_null<Ui::PopupMenu*> menu, HistoryItem *item);
 
@@ -50,6 +53,10 @@ using Describer = std::function<QJsonObject(
 
 void SetEventSender(std::function<void(QJsonObject)> send);
 void SetDescriber(Describer describer);
+
+// Shared by native menu and panel actions; describes the actual clicked
+// account/peer, independently of the account currently focused elsewhere.
+[[nodiscard]] QJsonObject DescribeContext(Main::Session &session, PeerData *peer, HistoryItem *item);
 
 // "ui.menu.add" and "ui.menu.remove".
 void Handle(const QJsonObject &command);

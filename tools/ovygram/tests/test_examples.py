@@ -48,6 +48,7 @@ class ExampleTests(unittest.TestCase):
             "away_reply.ovyplugin": {"ui.menu.add"},
             "chat_stats.ovyplugin": {"ui.menu.add"},
             "reminders.ovyplugin": {"ui.menu.add"},
+            "panel_buttons.ovyplugin": {"ui.panel.add"},
         }
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch("urllib.request.urlopen", offline):

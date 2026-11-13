@@ -1,4 +1,5 @@
 #include "api/api_plugins.h"
+#include "ovygram/plugin_install.h"
 
 #include "api/api_text_entities.h"
 #include "api/api_updates.h"
@@ -196,6 +197,18 @@ PluginClient::PluginClient(not_null<Core::PluginRuntime*> runtime)
 		const auto data = QByteArray::fromStdString(request);
 		crl::on_main(this, [=] { receive(data); });
 	});
+	const auto registryTimer = new QTimer(this);
+	connect(registryTimer, &QTimer::timeout, this, [=] {
+		if (Ovygram::InstallationUiActive()) return;
+		try {
+			for (const auto &notice : dispatch({ { u"action"_q, u"poll"_q } }).toArray()) {
+				notifyHookError(notice.toString());
+			}
+		} catch (const std::exception &error) {
+			LOG(("Ovygram registry: %1").arg(QString::fromUtf8(error.what())));
+		}
+	});
+	registryTimer->start(1000);
 }
 
 PluginClient::~PluginClient() {
@@ -261,6 +274,15 @@ Main::Session *PluginClient::session(MTP::Instance *instance) const {
 }
 
 QJsonValue PluginClient::dispatch(QJsonObject request) {
+	if (Ovygram::InstallationUiActive()) {
+		const auto action = request.value(u"action"_q).toString();
+		if (action == u"native_hook"_q) {
+			const auto original = request.value(u"request"_q).toObject();
+			return QJsonObject{ { u"data"_q, original.value(u"data"_q) }, { u"error"_q, original.value(u"error"_q) } };
+		} else if (action == u"client_event"_q || action == u"ui_event"_q || action == u"ui_execute"_q) {
+			return QJsonValue();
+		}
+	}
 	const auto response = _runtime->dispatch(
 		QJsonDocument(request).toJson(QJsonDocument::Compact).toStdString());
 	const auto value = QJsonDocument::fromJson(QByteArray::fromStdString(response)).object();
@@ -317,6 +339,12 @@ void PluginClient::receive(const QByteArray &request) {
 			throw std::runtime_error("Invalid client command.");
 		}
 		const auto method = command.value(u"method"_q).toString();
+		if (Ovygram::InstallationUiActive() && method != u"ui.close_plugin"_q
+			&& (method.startsWith(u"ui."_q) || method.startsWith(u"native."_q)
+				|| method.startsWith(u"widgets."_q) || method.startsWith(u"compose."_q)
+				|| method == u"python_ui"_q)) {
+			throw std::runtime_error("Plugin UI access is suspended during installation.");
+		}
 		if (method.startsWith(u"ui."_q)) {
 			try {
 				_ui->handle(command);

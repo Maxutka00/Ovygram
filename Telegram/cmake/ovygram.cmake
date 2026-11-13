@@ -29,8 +29,12 @@ target_sources(Telegram PRIVATE
     SourceFiles/ovygram/message_decorations.h
     SourceFiles/ovygram/plugin_elements.cpp
     SourceFiles/ovygram/plugin_elements.h
+    SourceFiles/ovygram/plugin_install.cpp
+    SourceFiles/ovygram/plugin_install.h
     SourceFiles/ovygram/plugin_menus.cpp
     SourceFiles/ovygram/plugin_menus.h
+    SourceFiles/ovygram/plugin_panel_buttons.cpp
+    SourceFiles/ovygram/plugin_panel_buttons.h
     SourceFiles/ovygram/plugin_native.cpp
     SourceFiles/ovygram/plugin_native.h
     SourceFiles/ovygram/plugin_paint.cpp

@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from .models import Account, Chat, Message
@@ -103,6 +104,27 @@ class WidgetRule:
     id: str
     def remove(self) -> None: ...
 
+@dataclass(frozen=True)
+class PanelContext:
+    account_id: str
+    chat: Chat
+    panel: str
+
+class PanelButton(WidgetRule):
+    def __init__(self, panel: Literal["chat.top_bar", "compose"], text: str,
+                 callback: Callable[[PanelContext], Any], *, tooltip: str = "", width: int = 40,
+                 priority: int = 0, enabled: bool = True, visible: bool = True,
+                 chat: Chat | None = None, kinds: Iterable[str] | None = None) -> None: ...
+    def update(self, text: str | None = None, tooltip: str | None = None, width: int | None = None,
+               priority: int | None = None, enabled: bool | None = None, visible: bool | None = None) -> None: ...
+    def show(self) -> None: ...
+    def hide(self) -> None: ...
+
+def add_panel_button(panel: Literal["chat.top_bar", "compose"], text: str,
+                     callback: Callable[[PanelContext], Any], *, tooltip: str = "", width: int = 40,
+                     priority: int = 0, enabled: bool = True, visible: bool = True,
+                     chat: Chat | None = None, kinds: Iterable[str] | None = None) -> PanelButton: ...
+
 async def widget_tree(depth: int = 8, root: dict[str, Any] | str | None = None) -> dict[str, Any] | None: ...
 async def get_property(widget: dict[str, Any] | str, name: str) -> Any: ...
 def set_property(widget: dict[str, Any] | str, name: str, value: Any) -> None: ...
@@ -144,6 +166,6 @@ class MenuContext:
     chat: Chat | None
     message: Message | None
 
-def add_menu_item(menu: Literal["main", "chat", "message"], text: str,
+def add_menu_item(menu: Literal["main", "chat", "profile", "message"], text: str,
                   callback: Callable[[MenuContext], Any],
                   kinds: Iterable[Literal["user", "chat", "channel"]] | None = None) -> WidgetRule: ...
