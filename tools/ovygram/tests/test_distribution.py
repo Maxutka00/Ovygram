@@ -5,6 +5,8 @@ speaks the same signed JSON protocol as the server.
 """
 
 import base64
+import ctypes
+import ctypes.util
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -21,7 +23,7 @@ import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "Telegram/PluginSDK"))
-from ovygram_registry import Registry, canonical, json_document, protected_author
+from ovygram_registry import Registry, canonical, json_document, protected_author, verify_ed25519
 from ovygram_runtime import Manager
 
 EXAMPLE = ROOT / "tools/ovygram/examples/lifecycle.ovyplugin"
@@ -497,6 +499,33 @@ class EmbeddedDistributionTests(unittest.TestCase):
                 process.stdout.close()
                 process.stderr.close()
             self.assertEqual(process.returncode, 0, stderr)
+
+
+class WindowsRegistryCryptoTests(unittest.TestCase):
+    def test_windows_uses_crypto_beside_the_ssl_extension(self):
+        import _ssl
+        # RFC 8032 test vector 1: a valid Ed25519 signature of an empty message.
+        public = bytes.fromhex('d75a980182b10ab7d54bfed3c964073a'
+                               '0ee172f3daa62325af021a68f707511a')
+        signature = bytes.fromhex(
+            'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155'
+            '5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b')
+        actual_library = (str(Path(_ssl.__file__).with_name('libcrypto-3.dll'))
+                          if sys.platform == 'win32' else ctypes.util.find_library('crypto'))
+        load_crypto = ctypes.CDLL
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for directory in (root, root / 'DLLs'):
+                with self.subTest(layout=directory.name), \
+                        patch('ovygram_registry.sys.platform', 'win32'), \
+                        patch('ovygram_registry.sys.executable', str(root / 'python.exe')), \
+                        patch('_ssl.__file__', str(directory / '_ssl.pyd'), create=True), \
+                        patch('ovygram_registry.ctypes.CDLL',
+                              side_effect=lambda path: load_crypto(actual_library)) as load:
+                    verify_ed25519(public, signature, b'')
+                    load.assert_called_once_with(str(directory / 'libcrypto-3.dll'))
+                    with self.assertRaisesRegex(ValueError, 'Подпись реестра'):
+                        verify_ed25519(public, signature, b'changed payload')
 
 
 class RegistryConfigurationTests(unittest.TestCase):
