@@ -138,7 +138,7 @@ class DistributionTests(unittest.TestCase):
         plugin = self.manager.describe(identity)
         self.assertEqual(plugin["trust"]["status"], "verified")
         self.assertEqual(plugin["trust"]["release_sequence"], 1)
-        self.assertEqual(json.loads(self.manager.state.read_text())["installations"][identity]["current"]["trust"]["chain"], 7)
+        self.assertEqual(json.loads(self.manager.state.read_text(encoding="utf-8"))["installations"][identity]["current"]["trust"]["chain"], 7)
 
     def test_tampered_unknown_or_expired_signatures_never_grant_trust(self):
         self.approve(self.source())
@@ -360,7 +360,7 @@ manager.activate_update(sys.argv[4], {'payload': payload, 'metadata': metadata,
         result = subprocess.run([sys.executable, "-B", "-c", script, str(ROOT / "Telegram/PluginSDK"),
                                  str(profile), str(EXAMPLE), identity], capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 73, result.stderr.decode())
-        interrupted = json.loads((profile / "state.json").read_text())
+        interrupted = json.loads((profile / "state.json").read_text(encoding="utf-8"))
         self.assertTrue(interrupted["pending_updates"])
         self.assertEqual(interrupted["installations"][identity]["current"]["metadata"]["version"], "2.0")
         self.manager = Manager(profile, registry=self.registry)
@@ -369,7 +369,7 @@ manager.activate_update(sys.argv[4], {'payload': payload, 'metadata': metadata,
         self.assertEqual(self.manager.records[identity]["settings"]["secret"], 42)
         self.assertTrue(self.manager.records[identity]["enabled"])
         self.assertFalse(self.manager.pending_updates)
-        self.assertFalse(json.loads((profile / "state.json").read_text())["pending_updates"])
+        self.assertFalse(json.loads((profile / "state.json").read_text(encoding="utf-8"))["pending_updates"])
 
     def test_unverified_wrong_chain_or_missing_download_does_not_replace(self):
         self.approve(self.source())
@@ -453,7 +453,7 @@ manager.activate_update(sys.argv[4], {'payload': payload, 'metadata': metadata,
         (directory / "data.txt").write_text("data")
         self.manager.remove(identity, keep_data=True)
         self.assertTrue(directory.exists())
-        self.assertEqual(json.loads((self.manager.root / "retained" / identity / "settings.json").read_text())["settings"]["keep"], 42)
+        self.assertEqual(json.loads((self.manager.root / "retained" / identity / "settings.json").read_text(encoding="utf-8"))["settings"]["keep"], 42)
 
 
 @unittest.skipUnless(os.environ.get("OVYGRAM_SMOKE_EXE"), "native host not staged")
@@ -514,7 +514,7 @@ class WindowsRegistryCryptoTests(unittest.TestCase):
                           if sys.platform == 'win32' else ctypes.util.find_library('crypto'))
         load_crypto = ctypes.CDLL
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             for directory in (root, root / 'DLLs'):
                 with self.subTest(layout=directory.name), \
                         patch('ovygram_registry.sys.platform', 'win32'), \
