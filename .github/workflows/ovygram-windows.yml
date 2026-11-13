@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: ${{ startsWith(inputs.mode, 'plugin') && github.repository || 'telegramdesktop/tdesktop' }}
-          ref: ${{ startsWith(inputs.mode, 'plugin') && github.sha || '3a2a9a34e833d3243a13787215b8a7cdcf5dc3c3' }}
+          ref: ${{ startsWith(inputs.mode, 'plugin') && github.sha || '346f10fde53c499ad50de8708a99e3c003bc1cf3' }}
           submodules: recursive
           path: TBuild/tdesktop
           persist-credentials: false

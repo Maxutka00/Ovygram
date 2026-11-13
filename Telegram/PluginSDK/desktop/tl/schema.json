@@ -1,5 +1,5 @@
 {
-  "schema_sha256": "76922ce265441d3f2f5188f56b69b41e1cb11354657ea547707507f8c3b93826",
+  "schema_sha256": "c2bbefcaec3285ba46c8af8f429c7012fe5aea253fd16d4be089f91c7c3fa71e",
   "declarations": [
     {
       "name": "boolFalse",
@@ -813,6 +813,66 @@
       "function": false
     },
     {
+      "name": "inputMediaWidget",
+      "id": 1157021774,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "allow_queries",
+          "flags.0?true"
+        ],
+        [
+          "shared_widget",
+          "flags.1?true"
+        ],
+        [
+          "width",
+          "int"
+        ],
+        [
+          "height",
+          "int"
+        ],
+        [
+          "html",
+          "string"
+        ],
+        [
+          "public_data",
+          "flags.2?string"
+        ],
+        [
+          "chat_data",
+          "flags.3?string"
+        ]
+      ],
+      "result": "InputMedia",
+      "function": false
+    },
+    {
+      "name": "inputMediaWidgetId",
+      "id": 2089114805,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "widget_id",
+          "long"
+        ],
+        [
+          "chat_data",
+          "flags.0?string"
+        ]
+      ],
+      "result": "InputMedia",
+      "function": false
+    },
+    {
       "name": "inputChatPhotoEmpty",
       "id": 480546647,
       "fields": [],
@@ -1383,6 +1443,10 @@
           "flags2.20?true"
         ],
         [
+          "bot_forum_sidebar",
+          "flags2.22?true"
+        ],
+        [
           "id",
           "long"
         ],
@@ -1815,6 +1879,10 @@
         [
           "in_news",
           "flags2.21?true"
+        ],
+        [
+          "forum_sidebar",
+          "flags2.23?true"
         ],
         [
           "id",
@@ -3452,6 +3520,58 @@
         [
           "call",
           "InputGroupCall"
+        ]
+      ],
+      "result": "MessageMedia",
+      "function": false
+    },
+    {
+      "name": "messageMediaWidget",
+      "id": 574157332,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "is_copy",
+          "flags.0?true"
+        ],
+        [
+          "can_query",
+          "flags.1?true"
+        ],
+        [
+          "background_query",
+          "flags.2?true"
+        ],
+        [
+          "width",
+          "int"
+        ],
+        [
+          "height",
+          "int"
+        ],
+        [
+          "payload",
+          "bytes"
+        ],
+        [
+          "public_data",
+          "flags.3?string"
+        ],
+        [
+          "public_data_hash",
+          "flags.3?long"
+        ],
+        [
+          "chat_data",
+          "flags.4?string"
+        ],
+        [
+          "widget_id",
+          "flags.5?long"
         ]
       ],
       "result": "MessageMedia",
@@ -10032,6 +10152,242 @@
       "function": false
     },
     {
+      "name": "updateEditForumTopic",
+      "id": 593913436,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "peer",
+          "Peer"
+        ],
+        [
+          "topic_id",
+          "int"
+        ],
+        [
+          "title",
+          "flags.0?string"
+        ],
+        [
+          "icon_emoji_id",
+          "flags.1?long"
+        ],
+        [
+          "closed",
+          "flags.2?Bool"
+        ],
+        [
+          "hidden",
+          "flags.3?Bool"
+        ]
+      ],
+      "result": "Update",
+      "function": false
+    },
+    {
+      "name": "updateBotWidgetQuery",
+      "id": 3010723432,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "query_id",
+          "long"
+        ],
+        [
+          "query_type",
+          "WidgetQueryType"
+        ],
+        [
+          "user_id",
+          "long"
+        ],
+        [
+          "peer",
+          "Peer"
+        ],
+        [
+          "msg_id",
+          "int"
+        ],
+        [
+          "chat_instance",
+          "long"
+        ],
+        [
+          "chat_type",
+          "string"
+        ],
+        [
+          "data",
+          "bytes"
+        ],
+        [
+          "widget_id",
+          "flags.0?long"
+        ],
+        [
+          "wallet_card",
+          "flags.1?wallet.Card"
+        ]
+      ],
+      "result": "Update",
+      "function": false
+    },
+    {
+      "name": "updateInlineBotWidgetQuery",
+      "id": 2784001544,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "query_id",
+          "long"
+        ],
+        [
+          "query_type",
+          "WidgetQueryType"
+        ],
+        [
+          "user_id",
+          "long"
+        ],
+        [
+          "inline_message_id",
+          "InputBotInlineMessageID"
+        ],
+        [
+          "chat_instance",
+          "long"
+        ],
+        [
+          "chat_type",
+          "string"
+        ],
+        [
+          "data",
+          "bytes"
+        ],
+        [
+          "widget_id",
+          "flags.0?long"
+        ],
+        [
+          "wallet_card",
+          "flags.1?wallet.Card"
+        ]
+      ],
+      "result": "Update",
+      "function": false
+    },
+    {
+      "name": "updateBotWidgetCopyQuery",
+      "id": 4203331319,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "query_id",
+          "long"
+        ],
+        [
+          "query_type",
+          "WidgetQueryType"
+        ],
+        [
+          "user_id",
+          "long"
+        ],
+        [
+          "data",
+          "bytes"
+        ],
+        [
+          "widget_id",
+          "long"
+        ],
+        [
+          "wallet_card",
+          "flags.1?wallet.Card"
+        ]
+      ],
+      "result": "Update",
+      "function": false
+    },
+    {
+      "name": "updateMessageWidgetData",
+      "id": 3148904669,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "peer",
+          "Peer"
+        ],
+        [
+          "msg_id",
+          "int"
+        ],
+        [
+          "public_data",
+          "flags.0?string"
+        ],
+        [
+          "public_data_hash",
+          "flags.0?long"
+        ],
+        [
+          "chat_data",
+          "flags.1?string"
+        ],
+        [
+          "pts",
+          "int"
+        ],
+        [
+          "pts_count",
+          "int"
+        ]
+      ],
+      "result": "Update",
+      "function": false
+    },
+    {
+      "name": "updateTranscribedAudioFile",
+      "id": 1934372475,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "pending",
+          "flags.0?true"
+        ],
+        [
+          "transcription_id",
+          "long"
+        ],
+        [
+          "text",
+          "string"
+        ]
+      ],
+      "result": "Update",
+      "function": false
+    },
+    {
       "name": "updates.state",
       "id": 2775329342,
       "fields": [
@@ -14748,6 +15104,98 @@
       "function": false
     },
     {
+      "name": "inputBotInlineMessageWidget",
+      "id": 4120355824,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "allow_queries",
+          "flags.0?true"
+        ],
+        [
+          "shared_widget",
+          "flags.1?true"
+        ],
+        [
+          "invert_media",
+          "flags.6?true"
+        ],
+        [
+          "width",
+          "int"
+        ],
+        [
+          "height",
+          "int"
+        ],
+        [
+          "html",
+          "string"
+        ],
+        [
+          "public_data",
+          "flags.2?string"
+        ],
+        [
+          "chat_data",
+          "flags.3?string"
+        ],
+        [
+          "reply_markup",
+          "flags.4?ReplyMarkup"
+        ],
+        [
+          "message",
+          "string"
+        ],
+        [
+          "entities",
+          "flags.5?Vector<MessageEntity>"
+        ]
+      ],
+      "result": "InputBotInlineMessage",
+      "function": false
+    },
+    {
+      "name": "inputBotInlineMessageWidgetId",
+      "id": 4270553387,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "invert_media",
+          "flags.3?true"
+        ],
+        [
+          "widget_id",
+          "long"
+        ],
+        [
+          "chat_data",
+          "flags.0?string"
+        ],
+        [
+          "reply_markup",
+          "flags.1?ReplyMarkup"
+        ],
+        [
+          "message",
+          "string"
+        ],
+        [
+          "entities",
+          "flags.2?Vector<MessageEntity>"
+        ]
+      ],
+      "result": "InputBotInlineMessage",
+      "function": false
+    },
+    {
       "name": "inputBotInlineResult",
       "id": 2294256409,
       "fields": [
@@ -15142,6 +15590,62 @@
         [
           "rich_message",
           "RichMessage"
+        ]
+      ],
+      "result": "BotInlineMessage",
+      "function": false
+    },
+    {
+      "name": "botInlineMessageWidget",
+      "id": 3131144244,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "invert_media",
+          "flags.5?true"
+        ],
+        [
+          "width",
+          "int"
+        ],
+        [
+          "height",
+          "int"
+        ],
+        [
+          "payload",
+          "bytes"
+        ],
+        [
+          "public_data",
+          "flags.0?string"
+        ],
+        [
+          "public_data_hash",
+          "flags.0?long"
+        ],
+        [
+          "chat_data",
+          "flags.1?string"
+        ],
+        [
+          "reply_markup",
+          "flags.2?ReplyMarkup"
+        ],
+        [
+          "widget_id",
+          "flags.3?long"
+        ],
+        [
+          "message",
+          "string"
+        ],
+        [
+          "entities",
+          "flags.4?Vector<MessageEntity>"
         ]
       ],
       "result": "BotInlineMessage",
@@ -36490,6 +36994,130 @@
       "function": false
     },
     {
+      "name": "userWallet",
+      "id": 1162684215,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "address",
+          "string"
+        ],
+        [
+          "balance",
+          "long"
+        ],
+        [
+          "public_key",
+          "flags.0?bytes"
+        ],
+        [
+          "state_init",
+          "flags.0?bytes"
+        ]
+      ],
+      "result": "UserWallet",
+      "function": false
+    },
+    {
+      "name": "widgetQueryTypeData",
+      "id": 383307531,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "with_wallet",
+          "flags.0?true"
+        ]
+      ],
+      "result": "WidgetQueryType",
+      "function": false
+    },
+    {
+      "name": "widgetQueryTypeSignData",
+      "id": 421545948,
+      "fields": [
+        [
+          "wallet",
+          "UserWallet"
+        ],
+        [
+          "sign_data",
+          "DataJSON"
+        ]
+      ],
+      "result": "WidgetQueryType",
+      "function": false
+    },
+    {
+      "name": "widgetQueryTypeSentTransaction",
+      "id": 4282069940,
+      "fields": [
+        [
+          "wallet",
+          "UserWallet"
+        ],
+        [
+          "msg_hash",
+          "string"
+        ]
+      ],
+      "result": "WidgetQueryType",
+      "function": false
+    },
+    {
+      "name": "messages.botWidgetQueryAnswer",
+      "id": 2511810595,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "result",
+          "flags.0?string"
+        ]
+      ],
+      "result": "messages.BotWidgetQueryAnswer",
+      "function": false
+    },
+    {
+      "name": "messages.widgetPublicDataNotModified",
+      "id": 3105451607,
+      "fields": [
+        [
+          "period",
+          "int"
+        ]
+      ],
+      "result": "messages.WidgetPublicData",
+      "function": false
+    },
+    {
+      "name": "messages.widgetPublicData",
+      "id": 71908351,
+      "fields": [
+        [
+          "hash",
+          "long"
+        ],
+        [
+          "data",
+          "string"
+        ],
+        [
+          "period",
+          "int"
+        ]
+      ],
+      "result": "messages.WidgetPublicData",
+      "function": false
+    },
+    {
       "name": "invokeAfterMsg",
       "id": 3416209197,
       "fields": [
@@ -45703,6 +46331,174 @@
       "function": true
     },
     {
+      "name": "messages.getBotWidgetQueryAnswer",
+      "id": 1549075833,
+      "fields": [
+        [
+          "peer",
+          "InputPeer"
+        ],
+        [
+          "msg_id",
+          "int"
+        ],
+        [
+          "query_type",
+          "WidgetQueryType"
+        ],
+        [
+          "data",
+          "bytes"
+        ]
+      ],
+      "result": "messages.BotWidgetQueryAnswer",
+      "function": true
+    },
+    {
+      "name": "messages.setBotWidgetQueryAnswer",
+      "id": 4174244970,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "query_id",
+          "long"
+        ],
+        [
+          "result",
+          "flags.0?string"
+        ]
+      ],
+      "result": "Bool",
+      "function": true
+    },
+    {
+      "name": "messages.editMessageWidgetData",
+      "id": 4129602590,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "peer",
+          "InputPeer"
+        ],
+        [
+          "id",
+          "int"
+        ],
+        [
+          "public_data",
+          "flags.0?string"
+        ],
+        [
+          "chat_data",
+          "flags.1?string"
+        ]
+      ],
+      "result": "Updates",
+      "function": true
+    },
+    {
+      "name": "messages.editInlineBotMessageWidgetData",
+      "id": 1670827563,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "id",
+          "InputBotInlineMessageID"
+        ],
+        [
+          "public_data",
+          "flags.0?string"
+        ],
+        [
+          "chat_data",
+          "flags.1?string"
+        ]
+      ],
+      "result": "Bool",
+      "function": true
+    },
+    {
+      "name": "messages.editWidgetData",
+      "id": 3938665408,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "widget_id",
+          "long"
+        ],
+        [
+          "public_data",
+          "string"
+        ],
+        [
+          "cache_time",
+          "flags.0?int"
+        ]
+      ],
+      "result": "Bool",
+      "function": true
+    },
+    {
+      "name": "messages.getWidgetPublicData",
+      "id": 1875194241,
+      "fields": [
+        [
+          "peer",
+          "InputPeer"
+        ],
+        [
+          "msg_id",
+          "int"
+        ],
+        [
+          "hash",
+          "long"
+        ]
+      ],
+      "result": "messages.WidgetPublicData",
+      "function": true
+    },
+    {
+      "name": "messages.transcribeAudioFile",
+      "id": 120401655,
+      "fields": [
+        [
+          "file",
+          "InputFile"
+        ]
+      ],
+      "result": "messages.TranscribedAudio",
+      "function": true
+    },
+    {
+      "name": "messages.getTranscriptionLangs",
+      "id": 3127695786,
+      "fields": [
+        [
+          "flags",
+          "#"
+        ],
+        [
+          "peer",
+          "flags.0?InputPeer"
+        ]
+      ],
+      "result": "Vector<string>",
+      "function": true
+    },
+    {
       "name": "updates.getState",
       "id": 3990128682,
       "fields": [],
@@ -47116,7 +47912,7 @@
     },
     {
       "name": "channels.toggleForum",
-      "id": 1073174324,
+      "id": 2727684948,
       "fields": [
         [
           "channel",
@@ -47128,6 +47924,10 @@
         ],
         [
           "tabs",
+          "Bool"
+        ],
+        [
+          "sidebar",
           "Bool"
         ]
       ],

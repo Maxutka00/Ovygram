@@ -84,7 +84,7 @@ class BaselineTests(unittest.TestCase):
         (release / 'Ovygram.exe').write_bytes(b'release executable')
         (runtime / 'ovygram_host.dll').write_bytes(b'release host')
         archive = baseline.package(self.root, self.root / 'artifacts', True, 'Release')
-        self.assertEqual(archive.name, 'ovygram-0.1.0-7.3.5-win64-release.zip')
+        self.assertEqual(archive.name, 'ovygram-0.1.0-7.4.3-win64-release.zip')
         with zipfile.ZipFile(archive) as source:
             self.assertEqual(source.read('Ovygram.exe'), b'release executable')
             self.assertEqual(source.read('python/ovygram_host.dll'), b'release host')

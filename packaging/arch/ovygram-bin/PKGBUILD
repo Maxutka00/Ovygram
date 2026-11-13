@@ -1,12 +1,12 @@
 # Maintainer: bezumnui <bezumnui.mistikgt@gmail.com>
 
 pkgname=ovygram-bin
-_tag=0.1.0-7.3.5
+_tag=0.1.0-7.4.3
 pkgver=${_tag//-/_}
 pkgrel=1
 pkgdesc='Telegram Desktop fork with Python plugins'
 arch=('x86_64')
-url='https://github.com/Maxutka00/Ovygram'
+url='https://github.com/Ovygram/Ovygram'
 license=('GPL-3.0-or-later WITH OpenSSL-exception')
 # From tools/ovygram/arch_depends.py on the build, plus what is loaded at
 # runtime: icons, PipeWire, Qt image formats.
@@ -78,7 +78,7 @@ conflicts=('ovygram')
 # The binary is stripped by tools/ovygram/package_linux.py; the bundled
 # Python must stay as built.
 options=('!strip' '!debug')
-source=("https://github.com/Maxutka00/Ovygram/releases/download/v${_tag}/ovygram-${_tag}-linux-x86_64.tar.xz")
+source=("https://github.com/Ovygram/Ovygram/releases/download/v${_tag}/ovygram-${_tag}-linux-x86_64.tar.xz")
 # Replace with the .sha256 published next to the release archive
 # (or run updpkgsums) before building or uploading to the AUR.
 sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')

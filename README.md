@@ -2,7 +2,7 @@
 
 Ovygram is an unofficial fork of [Telegram Desktop](https://github.com/telegramdesktop/tdesktop)
 for Windows x64 and Linux x64 with an embedded Python runtime and a plugin SDK.
-It is based on Telegram Desktop **v7.3.5** and targets Windows 11 and Linux.
+It is based on Telegram Desktop **v7.4.3** and targets Windows 11 and Linux.
 
 Plugins are managed from the client's settings, with support for import,
 configuration, and rollback. The SDK covers accounts, messages, history, files,

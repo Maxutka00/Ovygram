@@ -1496,6 +1496,20 @@ class botInlineMessageText(TLObject):
     reply_markup: TLObject | None
     def __init__(self, *, no_webpage: bool = ..., invert_media: bool = ..., message: str, entities: list[TLObject] | None = ..., reply_markup: TLObject | None = ...) -> None: ...
 
+class botInlineMessageWidget(TLObject):
+    invert_media: bool
+    width: int
+    height: int
+    payload: bytes
+    public_data: str | None
+    public_data_hash: int | None
+    chat_data: str | None
+    reply_markup: TLObject | None
+    widget_id: int | None
+    message: str
+    entities: list[TLObject] | None
+    def __init__(self, *, invert_media: bool = ..., width: int, height: int, payload: bytes, public_data: str | None = ..., public_data_hash: int | None = ..., chat_data: str | None = ..., reply_markup: TLObject | None = ..., widget_id: int | None = ..., message: str, entities: list[TLObject] | None = ...) -> None: ...
+
 class botInlineResult(TLObject):
     id: str
     type: str
@@ -1926,6 +1940,7 @@ class channel(TLObject):
     monoforum: bool
     forum_tabs: bool
     in_news: bool
+    forum_sidebar: bool
     id: int
     access_hash: int | None
     title: str
@@ -1949,7 +1964,7 @@ class channel(TLObject):
     linked_monoforum_id: int | None
     linked_community_id: int | None
     pinned_msg_id: int | None
-    def __init__(self, *, creator: bool = ..., left: bool = ..., broadcast: bool = ..., verified: bool = ..., megagroup: bool = ..., restricted: bool = ..., signatures: bool = ..., min: bool = ..., scam: bool = ..., has_link: bool = ..., has_geo: bool = ..., slowmode_enabled: bool = ..., call_active: bool = ..., call_not_empty: bool = ..., fake: bool = ..., gigagroup: bool = ..., noforwards: bool = ..., join_to_send: bool = ..., join_request: bool = ..., forum: bool = ..., stories_hidden: bool = ..., stories_hidden_min: bool = ..., stories_unavailable: bool = ..., signature_profiles: bool = ..., autotranslation: bool = ..., broadcast_messages_allowed: bool = ..., monoforum: bool = ..., forum_tabs: bool = ..., in_news: bool = ..., id: int, access_hash: int | None = ..., title: str, username: str | None = ..., photo: TLObject, date: int, restriction_reason: list[TLObject] | None = ..., admin_rights: TLObject | None = ..., banned_rights: TLObject | None = ..., default_banned_rights: TLObject | None = ..., participants_count: int | None = ..., usernames: list[TLObject] | None = ..., stories_max_id: TLObject | None = ..., color: TLObject | None = ..., profile_color: TLObject | None = ..., emoji_status: TLObject | None = ..., level: int | None = ..., subscription_until_date: int | None = ..., bot_verification_icon: int | None = ..., send_paid_messages_stars: int | None = ..., linked_monoforum_id: int | None = ..., linked_community_id: int | None = ..., pinned_msg_id: int | None = ...) -> None: ...
+    def __init__(self, *, creator: bool = ..., left: bool = ..., broadcast: bool = ..., verified: bool = ..., megagroup: bool = ..., restricted: bool = ..., signatures: bool = ..., min: bool = ..., scam: bool = ..., has_link: bool = ..., has_geo: bool = ..., slowmode_enabled: bool = ..., call_active: bool = ..., call_not_empty: bool = ..., fake: bool = ..., gigagroup: bool = ..., noforwards: bool = ..., join_to_send: bool = ..., join_request: bool = ..., forum: bool = ..., stories_hidden: bool = ..., stories_hidden_min: bool = ..., stories_unavailable: bool = ..., signature_profiles: bool = ..., autotranslation: bool = ..., broadcast_messages_allowed: bool = ..., monoforum: bool = ..., forum_tabs: bool = ..., in_news: bool = ..., forum_sidebar: bool = ..., id: int, access_hash: int | None = ..., title: str, username: str | None = ..., photo: TLObject, date: int, restriction_reason: list[TLObject] | None = ..., admin_rights: TLObject | None = ..., banned_rights: TLObject | None = ..., default_banned_rights: TLObject | None = ..., participants_count: int | None = ..., usernames: list[TLObject] | None = ..., stories_max_id: TLObject | None = ..., color: TLObject | None = ..., profile_color: TLObject | None = ..., emoji_status: TLObject | None = ..., level: int | None = ..., subscription_until_date: int | None = ..., bot_verification_icon: int | None = ..., send_paid_messages_stars: int | None = ..., linked_monoforum_id: int | None = ..., linked_community_id: int | None = ..., pinned_msg_id: int | None = ...) -> None: ...
 
 class channelAdminLogEvent(TLObject):
     id: int
@@ -2675,7 +2690,8 @@ class channels:
         channel: TLObject
         enabled: bool
         tabs: bool
-        def __init__(self, *, channel: TLObject, enabled: bool, tabs: bool) -> None: ...
+        sidebar: bool
+        def __init__(self, *, channel: TLObject, enabled: bool, tabs: bool, sidebar: bool) -> None: ...
 
     class toggleJoinRequest(TLObject):
         apply_to_invites: bool
@@ -4660,6 +4676,29 @@ class inputBotInlineMessageText(TLObject):
     reply_markup: TLObject | None
     def __init__(self, *, no_webpage: bool = ..., invert_media: bool = ..., message: str, entities: list[TLObject] | None = ..., reply_markup: TLObject | None = ...) -> None: ...
 
+class inputBotInlineMessageWidget(TLObject):
+    allow_queries: bool
+    shared_widget: bool
+    invert_media: bool
+    width: int
+    height: int
+    html: str
+    public_data: str | None
+    chat_data: str | None
+    reply_markup: TLObject | None
+    message: str
+    entities: list[TLObject] | None
+    def __init__(self, *, allow_queries: bool = ..., shared_widget: bool = ..., invert_media: bool = ..., width: int, height: int, html: str, public_data: str | None = ..., chat_data: str | None = ..., reply_markup: TLObject | None = ..., message: str, entities: list[TLObject] | None = ...) -> None: ...
+
+class inputBotInlineMessageWidgetId(TLObject):
+    invert_media: bool
+    widget_id: int
+    chat_data: str | None
+    reply_markup: TLObject | None
+    message: str
+    entities: list[TLObject] | None
+    def __init__(self, *, invert_media: bool = ..., widget_id: int, chat_data: str | None = ..., reply_markup: TLObject | None = ..., message: str, entities: list[TLObject] | None = ...) -> None: ...
+
 class inputBotInlineResult(TLObject):
     id: str
     type: str
@@ -5189,6 +5228,21 @@ class inputMediaWebPage(TLObject):
     optional: bool
     url: str
     def __init__(self, *, force_large_media: bool = ..., force_small_media: bool = ..., optional: bool = ..., url: str) -> None: ...
+
+class inputMediaWidget(TLObject):
+    allow_queries: bool
+    shared_widget: bool
+    width: int
+    height: int
+    html: str
+    public_data: str | None
+    chat_data: str | None
+    def __init__(self, *, allow_queries: bool = ..., shared_widget: bool = ..., width: int, height: int, html: str, public_data: str | None = ..., chat_data: str | None = ...) -> None: ...
+
+class inputMediaWidgetId(TLObject):
+    widget_id: int
+    chat_data: str | None
+    def __init__(self, *, widget_id: int, chat_data: str | None = ...) -> None: ...
 
 class inputMessageCallbackQuery(TLObject):
     id: int
@@ -6978,6 +7032,19 @@ class messageMediaWebPage(TLObject):
     webpage: TLObject
     def __init__(self, *, force_large_media: bool = ..., force_small_media: bool = ..., manual: bool = ..., safe: bool = ..., webpage: TLObject) -> None: ...
 
+class messageMediaWidget(TLObject):
+    is_copy: bool
+    can_query: bool
+    background_query: bool
+    width: int
+    height: int
+    payload: bytes
+    public_data: str | None
+    public_data_hash: int | None
+    chat_data: str | None
+    widget_id: int | None
+    def __init__(self, *, is_copy: bool = ..., can_query: bool = ..., background_query: bool = ..., width: int, height: int, payload: bytes, public_data: str | None = ..., public_data_hash: int | None = ..., chat_data: str | None = ..., widget_id: int | None = ...) -> None: ...
+
 class messagePeerReaction(TLObject):
     big: bool
     unread: bool
@@ -7204,6 +7271,10 @@ class messages:
         cache_time: int
         users: list[TLObject]
         def __init__(self, *, gallery: bool = ..., query_id: int, next_offset: str | None = ..., switch_pm: TLObject | None = ..., switch_webview: TLObject | None = ..., results: list[TLObject], cache_time: int, users: list[TLObject]) -> None: ...
+
+    class botWidgetQueryAnswer(TLObject):
+        result: str | None
+        def __init__(self, *, result: str | None = ...) -> None: ...
 
     class channelMessages(TLObject):
         inexact: bool
@@ -7549,6 +7620,12 @@ class messages:
         rich_message: TLObject | None
         def __init__(self, *, no_webpage: bool = ..., invert_media: bool = ..., id: TLObject, message: str | None = ..., media: TLObject | None = ..., reply_markup: TLObject | None = ..., entities: list[TLObject] | None = ..., rich_message: TLObject | None = ...) -> None: ...
 
+    class editInlineBotMessageWidgetData(TLObject):
+        id: TLObject
+        public_data: str | None
+        chat_data: str | None
+        def __init__(self, *, id: TLObject, public_data: str | None = ..., chat_data: str | None = ...) -> None: ...
+
     class editMessage(TLObject):
         no_webpage: bool
         invert_media: bool
@@ -7564,10 +7641,23 @@ class messages:
         rich_message: TLObject | None
         def __init__(self, *, no_webpage: bool = ..., invert_media: bool = ..., peer: TLObject, id: int, message: str | None = ..., media: TLObject | None = ..., reply_markup: TLObject | None = ..., entities: list[TLObject] | None = ..., schedule_date: int | None = ..., schedule_repeat_period: int | None = ..., quick_reply_shortcut_id: int | None = ..., rich_message: TLObject | None = ...) -> None: ...
 
+    class editMessageWidgetData(TLObject):
+        peer: TLObject
+        id: int
+        public_data: str | None
+        chat_data: str | None
+        def __init__(self, *, peer: TLObject, id: int, public_data: str | None = ..., chat_data: str | None = ...) -> None: ...
+
     class editQuickReplyShortcut(TLObject):
         shortcut_id: int
         shortcut: str
         def __init__(self, *, shortcut_id: int, shortcut: str) -> None: ...
+
+    class editWidgetData(TLObject):
+        widget_id: int
+        public_data: str
+        cache_time: int | None
+        def __init__(self, *, widget_id: int, public_data: str, cache_time: int | None = ...) -> None: ...
 
     class emojiGameDiceInfo(TLObject):
         game_hash: str
@@ -7750,6 +7840,13 @@ class messages:
         data: bytes | None
         password: TLObject | None
         def __init__(self, *, game: bool = ..., peer: TLObject, msg_id: int, data: bytes | None = ..., password: TLObject | None = ...) -> None: ...
+
+    class getBotWidgetQueryAnswer(TLObject):
+        peer: TLObject
+        msg_id: int
+        query_type: TLObject
+        data: bytes
+        def __init__(self, *, peer: TLObject, msg_id: int, query_type: TLObject, data: bytes) -> None: ...
 
     class getChatInviteImporters(TLObject):
         requested: bool
@@ -8188,6 +8285,10 @@ class messages:
         hash: int
         def __init__(self, *, limit: int, hash: int) -> None: ...
 
+    class getTranscriptionLangs(TLObject):
+        peer: TLObject | None
+        def __init__(self, *, peer: TLObject | None = ...) -> None: ...
+
     class getUnreadMentions(TLObject):
         peer: TLObject
         top_msg_id: int | None
@@ -8228,6 +8329,12 @@ class messages:
         message: str
         entities: list[TLObject] | None
         def __init__(self, *, message: str, entities: list[TLObject] | None = ...) -> None: ...
+
+    class getWidgetPublicData(TLObject):
+        peer: TLObject
+        msg_id: int
+        hash: int
+        def __init__(self, *, peer: TLObject, msg_id: int, hash: int) -> None: ...
 
     class hideAllChatJoinRequests(TLObject):
         approved: bool
@@ -8957,6 +9064,11 @@ class messages:
         shipping_options: list[TLObject] | None
         def __init__(self, *, query_id: int, error: str | None = ..., shipping_options: list[TLObject] | None = ...) -> None: ...
 
+    class setBotWidgetQueryAnswer(TLObject):
+        query_id: int
+        result: str | None
+        def __init__(self, *, query_id: int, result: str | None = ...) -> None: ...
+
     class setChatAvailableReactions(TLObject):
         peer: TLObject
         available_reactions: TLObject
@@ -9155,6 +9267,10 @@ class messages:
         msg_id: int
         def __init__(self, *, peer: TLObject, msg_id: int) -> None: ...
 
+    class transcribeAudioFile(TLObject):
+        file: TLObject
+        def __init__(self, *, file: TLObject) -> None: ...
+
     class transcribedAudio(TLObject):
         pending: bool
         transcription_id: int
@@ -9266,6 +9382,16 @@ class messages:
         chats: list[TLObject]
         users: list[TLObject]
         def __init__(self, *, media: TLObject, chats: list[TLObject], users: list[TLObject]) -> None: ...
+
+    class widgetPublicData(TLObject):
+        hash: int
+        data: str
+        period: int
+        def __init__(self, *, hash: int, data: str, period: int) -> None: ...
+
+    class widgetPublicDataNotModified(TLObject):
+        period: int
+        def __init__(self, *, period: int) -> None: ...
 
 class missingInvitee(TLObject):
     premium_would_allow_invite: bool
@@ -13473,6 +13599,28 @@ class updateBotWebhookJSONQuery(TLObject):
     timeout: int
     def __init__(self, *, query_id: int, data: TLObject, timeout: int) -> None: ...
 
+class updateBotWidgetCopyQuery(TLObject):
+    query_id: int
+    query_type: TLObject
+    user_id: int
+    data: bytes
+    widget_id: int
+    wallet_card: TLObject | None
+    def __init__(self, *, query_id: int, query_type: TLObject, user_id: int, data: bytes, widget_id: int, wallet_card: TLObject | None = ...) -> None: ...
+
+class updateBotWidgetQuery(TLObject):
+    query_id: int
+    query_type: TLObject
+    user_id: int
+    peer: TLObject
+    msg_id: int
+    chat_instance: int
+    chat_type: str
+    data: bytes
+    widget_id: int | None
+    wallet_card: TLObject | None
+    def __init__(self, *, query_id: int, query_type: TLObject, user_id: int, peer: TLObject, msg_id: int, chat_instance: int, chat_type: str, data: bytes, widget_id: int | None = ..., wallet_card: TLObject | None = ...) -> None: ...
+
 class updateBusinessBotCallbackQuery(TLObject):
     query_id: int
     user_id: int
@@ -13695,6 +13843,15 @@ class updateEditEphemeralMessage(TLObject):
     message: TLObject
     def __init__(self, *, message: TLObject) -> None: ...
 
+class updateEditForumTopic(TLObject):
+    peer: TLObject
+    topic_id: int
+    title: str | None
+    icon_emoji_id: int | None
+    closed: bool
+    hidden: bool
+    def __init__(self, *, peer: TLObject, topic_id: int, title: str | None = ..., icon_emoji_id: int | None = ..., closed: bool = ..., hidden: bool = ...) -> None: ...
+
 class updateEditMessage(TLObject):
     message: TLObject
     pts: int
@@ -13788,6 +13945,18 @@ class updateInlineBotCallbackQuery(TLObject):
     game_short_name: str | None
     def __init__(self, *, query_id: int, user_id: int, msg_id: TLObject, chat_instance: int, data: bytes | None = ..., game_short_name: str | None = ...) -> None: ...
 
+class updateInlineBotWidgetQuery(TLObject):
+    query_id: int
+    query_type: TLObject
+    user_id: int
+    inline_message_id: TLObject
+    chat_instance: int
+    chat_type: str
+    data: bytes
+    widget_id: int | None
+    wallet_card: TLObject | None
+    def __init__(self, *, query_id: int, query_type: TLObject, user_id: int, inline_message_id: TLObject, chat_instance: int, chat_type: str, data: bytes, widget_id: int | None = ..., wallet_card: TLObject | None = ...) -> None: ...
+
 class updateJoinChatWebViewDecision(TLObject):
     peer: TLObject
     query_id: int
@@ -13846,6 +14015,16 @@ class updateMessageReactions(TLObject):
     saved_peer_id: TLObject | None
     reactions: TLObject
     def __init__(self, *, peer: TLObject, msg_id: int, top_msg_id: int | None = ..., saved_peer_id: TLObject | None = ..., reactions: TLObject) -> None: ...
+
+class updateMessageWidgetData(TLObject):
+    peer: TLObject
+    msg_id: int
+    public_data: str | None
+    public_data_hash: int | None
+    chat_data: str | None
+    pts: int
+    pts_count: int
+    def __init__(self, *, peer: TLObject, msg_id: int, public_data: str | None = ..., public_data_hash: int | None = ..., chat_data: str | None = ..., pts: int, pts_count: int) -> None: ...
 
 class updateMonoForumNoPaidException(TLObject):
     exception: bool
@@ -14255,6 +14434,12 @@ class updateTranscribedAudio(TLObject):
     text: str
     def __init__(self, *, pending: bool = ..., peer: TLObject, msg_id: int, transcription_id: int, text: str) -> None: ...
 
+class updateTranscribedAudioFile(TLObject):
+    pending: bool
+    transcription_id: int
+    text: str
+    def __init__(self, *, pending: bool = ..., transcription_id: int, text: str) -> None: ...
+
 class updateUser(TLObject):
     user_id: int
     def __init__(self, *, user_id: int) -> None: ...
@@ -14564,6 +14749,7 @@ class user(TLObject):
     bot_can_manage_bots: bool
     bot_guestchat: bool
     bot_guard: bool
+    bot_forum_sidebar: bool
     id: int
     access_hash: int | None
     first_name: str | None
@@ -14585,7 +14771,7 @@ class user(TLObject):
     bot_verification_icon: int | None
     send_paid_messages_stars: int | None
     linked_community_id: int | None
-    def __init__(self, *, self_: bool = ..., contact: bool = ..., mutual_contact: bool = ..., deleted: bool = ..., bot: bool = ..., bot_chat_history: bool = ..., bot_nochats: bool = ..., verified: bool = ..., restricted: bool = ..., min: bool = ..., bot_inline_geo: bool = ..., support: bool = ..., scam: bool = ..., apply_min_photo: bool = ..., fake: bool = ..., bot_attach_menu: bool = ..., premium: bool = ..., attach_menu_enabled: bool = ..., bot_can_edit: bool = ..., close_friend: bool = ..., stories_hidden: bool = ..., stories_unavailable: bool = ..., contact_require_premium: bool = ..., bot_business: bool = ..., bot_has_main_app: bool = ..., bot_forum_view: bool = ..., bot_forum_can_manage_topics: bool = ..., bot_can_manage_bots: bool = ..., bot_guestchat: bool = ..., bot_guard: bool = ..., id: int, access_hash: int | None = ..., first_name: str | None = ..., last_name: str | None = ..., username: str | None = ..., phone: str | None = ..., photo: TLObject | None = ..., status: TLObject | None = ..., bot_info_version: int | None = ..., restriction_reason: list[TLObject] | None = ..., bot_inline_placeholder: str | None = ..., lang_code: str | None = ..., emoji_status: TLObject | None = ..., usernames: list[TLObject] | None = ..., stories_max_id: TLObject | None = ..., color: TLObject | None = ..., profile_color: TLObject | None = ..., bot_active_users: int | None = ..., bot_verification_icon: int | None = ..., send_paid_messages_stars: int | None = ..., linked_community_id: int | None = ...) -> None: ...
+    def __init__(self, *, self_: bool = ..., contact: bool = ..., mutual_contact: bool = ..., deleted: bool = ..., bot: bool = ..., bot_chat_history: bool = ..., bot_nochats: bool = ..., verified: bool = ..., restricted: bool = ..., min: bool = ..., bot_inline_geo: bool = ..., support: bool = ..., scam: bool = ..., apply_min_photo: bool = ..., fake: bool = ..., bot_attach_menu: bool = ..., premium: bool = ..., attach_menu_enabled: bool = ..., bot_can_edit: bool = ..., close_friend: bool = ..., stories_hidden: bool = ..., stories_unavailable: bool = ..., contact_require_premium: bool = ..., bot_business: bool = ..., bot_has_main_app: bool = ..., bot_forum_view: bool = ..., bot_forum_can_manage_topics: bool = ..., bot_can_manage_bots: bool = ..., bot_guestchat: bool = ..., bot_guard: bool = ..., bot_forum_sidebar: bool = ..., id: int, access_hash: int | None = ..., first_name: str | None = ..., last_name: str | None = ..., username: str | None = ..., phone: str | None = ..., photo: TLObject | None = ..., status: TLObject | None = ..., bot_info_version: int | None = ..., restriction_reason: list[TLObject] | None = ..., bot_inline_placeholder: str | None = ..., lang_code: str | None = ..., emoji_status: TLObject | None = ..., usernames: list[TLObject] | None = ..., stories_max_id: TLObject | None = ..., color: TLObject | None = ..., profile_color: TLObject | None = ..., bot_active_users: int | None = ..., bot_verification_icon: int | None = ..., send_paid_messages_stars: int | None = ..., linked_community_id: int | None = ...) -> None: ...
 
 class userEmpty(TLObject):
     id: int
@@ -14687,6 +14873,13 @@ class userStatusOnline(TLObject):
 class userStatusRecently(TLObject):
     by_me: bool
     def __init__(self, *, by_me: bool = ...) -> None: ...
+
+class userWallet(TLObject):
+    address: str
+    balance: int
+    public_key: bytes | None
+    state_init: bytes | None
+    def __init__(self, *, address: str, balance: int, public_key: bytes | None = ..., state_init: bytes | None = ...) -> None: ...
 
 class username(TLObject):
     editable: bool
@@ -15212,3 +15405,17 @@ class webViewResultUrl(TLObject):
     query_id: int | None
     url: str
     def __init__(self, *, fullsize: bool = ..., fullscreen: bool = ..., same_origin: bool = ..., query_id: int | None = ..., url: str) -> None: ...
+
+class widgetQueryTypeData(TLObject):
+    with_wallet: bool
+    def __init__(self, *, with_wallet: bool = ...) -> None: ...
+
+class widgetQueryTypeSentTransaction(TLObject):
+    wallet: TLObject
+    msg_hash: str
+    def __init__(self, *, wallet: TLObject, msg_hash: str) -> None: ...
+
+class widgetQueryTypeSignData(TLObject):
+    wallet: TLObject
+    sign_data: TLObject
+    def __init__(self, *, wallet: TLObject, sign_data: TLObject) -> None: ...

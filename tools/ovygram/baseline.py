@@ -10,8 +10,8 @@ import time
 import zipfile
 
 
-UPSTREAM = '3a2a9a34e833d3243a13787215b8a7cdcf5dc3c3'
-CLIENT_VERSION = '7.3.5'
+UPSTREAM = '346f10fde53c499ad50de8708a99e3c003bc1cf3'
+CLIENT_VERSION = '7.4.3'
 # Keep in sync with OvygramVersionStr in Telegram/SourceFiles/core/version.h.
 OVYGRAM_VERSION = '0.1.0'
 GIB = 1024 ** 3

@@ -1,6 +1,6 @@
 # Releasing Ovygram
 
-A release is tagged `v<ovygram>-<telegram>`, e.g. `v0.1.0-7.3.5`, and ships
+A release is tagged `v<ovygram>-<telegram>`, e.g. `v0.1.0-7.4.3`, and ships
 the sources with these assets:
 
 | Asset | Made by |
@@ -50,11 +50,11 @@ Windows 11 without Python installed.
 2. Tag and publish (the notes are in `docs/release-notes/`):
 
    ```
-   git tag -a v0.1.0-7.3.5 -m "Ovygram 0.1.0 (Telegram Desktop 7.3.5)"
-   git push origin v0.1.0-7.3.5
-   gh release create v0.1.0-7.3.5 --notes-file docs/release-notes/0.1.0-7.3.5.md \
-       dist/ovygram-0.1.0-7.3.5-linux-x86_64.tar.xz \
-       dist/ovygram-0.1.0-7.3.5-linux-x86_64.tar.xz.sha256 \
+   git tag -a v0.1.0-7.4.3 -m "Ovygram 0.1.0 (Telegram Desktop 7.4.3)"
+   git push origin v0.1.0-7.4.3
+   gh release create v0.1.0-7.4.3 --notes-file docs/release-notes/0.1.0-7.4.3.md \
+       dist/ovygram-0.1.0-7.4.3-linux-x86_64.tar.xz \
+       dist/ovygram-0.1.0-7.4.3-linux-x86_64.tar.xz.sha256 \
        Ovygram-win64-portable.zip
    ```
 

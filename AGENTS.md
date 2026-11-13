@@ -19,6 +19,8 @@
 - Registry/index URLs will be supplied at deployment. Keep them configurable;
   their absence is not an implementation blocker. Pin the generated public key
   in the client. Never commit the private signing key or put it in client files.
-- Keep the pinned upstream and submodule revisions. Preserve existing work.
+- Keep upstream and submodules pinned to the selected official release.
+  The owner requested the update to Telegram Desktop v7.4.3 on 2026-11-13;
+  preserve existing Ovygram changes while merging that release.
 - Do not report full plan completion from unit-test counts. Track source
   implementation, executed tests, and pending GitHub/manual validation separately.
