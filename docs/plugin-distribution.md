@@ -9,9 +9,10 @@ is the minimum Desktop SDK required: an integer from 1 through the client's
 ## Registry configuration
 
 `Telegram/PluginSDK/registry.json` already pins the generated Ed25519 public
-key `543138e5eaa5851c`. Its `server_url` and `index_url` are intentionally
-empty until deployment. Set the real HTTPS API and GitHub index URLs before
-shipping a connected build. Nonempty `OVYGRAM_REGISTRY_URL` and
+key `543138e5eaa5851c`. Its `server_url` is `https://api.ovygram.opik.net` and
+its `index_url` is
+`https://raw.githubusercontent.com/Ovygram/ovygram-plugins/main/index.json`.
+Nonempty `OVYGRAM_REGISTRY_URL` and
 `OVYGRAM_PLUGIN_INDEX_URL` environment variables override these endpoints;
 they do not replace the pinned public keys. Explicit `Registry(config)`
 configuration takes precedence over environment variables.

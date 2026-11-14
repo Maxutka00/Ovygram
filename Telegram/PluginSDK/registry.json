@@ -1,6 +1,6 @@
 {
-  "server_url": "",
-  "index_url": "",
+  "server_url": "https://api.ovygram.opik.net",
+  "index_url": "https://raw.githubusercontent.com/Ovygram/ovygram-plugins/main/index.json",
   "public_keys": {
     "543138e5eaa5851c": "S+oQHRa59EaAPiflvhYcNB1HJIrIsUtwOGDJFEG4By8="
   }
