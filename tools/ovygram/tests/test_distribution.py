@@ -5,6 +5,8 @@ speaks the same signed JSON protocol as the server.
 """
 
 import base64
+import ctypes
+import ctypes.util
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -21,7 +23,7 @@ import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "Telegram/PluginSDK"))
-from ovygram_registry import Registry, canonical, json_document, protected_author
+from ovygram_registry import Registry, canonical, json_document, protected_author, verify_ed25519
 from ovygram_runtime import Manager
 
 EXAMPLE = ROOT / "tools/ovygram/examples/lifecycle.ovyplugin"
@@ -81,7 +83,7 @@ class DistributionTests(unittest.TestCase):
         raise ValueError("Unexpected URL: " + url)
 
     def source(self, version="1.0.0", extra="", release=True):
-        text = EXAMPLE.read_text().replace('"1.0.0"', repr(version))
+        text = EXAMPLE.read_text(encoding="utf-8").replace('"1.0.0"', repr(version))
         # The example is deliberately local-only.
         import re
         text = re.sub(r"__release__\s*=\s*(True|False)", "__release__ = " + repr(release), text)
@@ -136,7 +138,7 @@ class DistributionTests(unittest.TestCase):
         plugin = self.manager.describe(identity)
         self.assertEqual(plugin["trust"]["status"], "verified")
         self.assertEqual(plugin["trust"]["release_sequence"], 1)
-        self.assertEqual(json.loads(self.manager.state.read_text())["installations"][identity]["current"]["trust"]["chain"], 7)
+        self.assertEqual(json.loads(self.manager.state.read_text(encoding="utf-8"))["installations"][identity]["current"]["trust"]["chain"], 7)
 
     def test_tampered_unknown_or_expired_signatures_never_grant_trust(self):
         self.approve(self.source())
@@ -358,7 +360,7 @@ manager.activate_update(sys.argv[4], {'payload': payload, 'metadata': metadata,
         result = subprocess.run([sys.executable, "-B", "-c", script, str(ROOT / "Telegram/PluginSDK"),
                                  str(profile), str(EXAMPLE), identity], capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 73, result.stderr.decode())
-        interrupted = json.loads((profile / "state.json").read_text())
+        interrupted = json.loads((profile / "state.json").read_text(encoding="utf-8"))
         self.assertTrue(interrupted["pending_updates"])
         self.assertEqual(interrupted["installations"][identity]["current"]["metadata"]["version"], "2.0")
         self.manager = Manager(profile, registry=self.registry)
@@ -367,7 +369,7 @@ manager.activate_update(sys.argv[4], {'payload': payload, 'metadata': metadata,
         self.assertEqual(self.manager.records[identity]["settings"]["secret"], 42)
         self.assertTrue(self.manager.records[identity]["enabled"])
         self.assertFalse(self.manager.pending_updates)
-        self.assertFalse(json.loads((profile / "state.json").read_text())["pending_updates"])
+        self.assertFalse(json.loads((profile / "state.json").read_text(encoding="utf-8"))["pending_updates"])
 
     def test_unverified_wrong_chain_or_missing_download_does_not_replace(self):
         self.approve(self.source())
@@ -451,7 +453,7 @@ manager.activate_update(sys.argv[4], {'payload': payload, 'metadata': metadata,
         (directory / "data.txt").write_text("data")
         self.manager.remove(identity, keep_data=True)
         self.assertTrue(directory.exists())
-        self.assertEqual(json.loads((self.manager.root / "retained" / identity / "settings.json").read_text())["settings"]["keep"], 42)
+        self.assertEqual(json.loads((self.manager.root / "retained" / identity / "settings.json").read_text(encoding="utf-8"))["settings"]["keep"], 42)
 
 
 @unittest.skipUnless(os.environ.get("OVYGRAM_SMOKE_EXE"), "native host not staged")
@@ -497,6 +499,33 @@ class EmbeddedDistributionTests(unittest.TestCase):
                 process.stdout.close()
                 process.stderr.close()
             self.assertEqual(process.returncode, 0, stderr)
+
+
+class WindowsRegistryCryptoTests(unittest.TestCase):
+    def test_windows_uses_crypto_beside_the_ssl_extension(self):
+        import _ssl
+        # RFC 8032 test vector 1: a valid Ed25519 signature of an empty message.
+        public = bytes.fromhex('d75a980182b10ab7d54bfed3c964073a'
+                               '0ee172f3daa62325af021a68f707511a')
+        signature = bytes.fromhex(
+            'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155'
+            '5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b')
+        actual_library = (str(Path(_ssl.__file__).with_name('libcrypto-3.dll'))
+                          if sys.platform == 'win32' else ctypes.util.find_library('crypto'))
+        load_crypto = ctypes.CDLL
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            for directory in (root, root / 'DLLs'):
+                with self.subTest(layout=directory.name), \
+                        patch('ovygram_registry.sys.platform', 'win32'), \
+                        patch('ovygram_registry.sys.executable', str(root / 'python.exe')), \
+                        patch('_ssl.__file__', str(directory / '_ssl.pyd'), create=True), \
+                        patch('ovygram_registry.ctypes.CDLL',
+                              side_effect=lambda path: load_crypto(actual_library)) as load:
+                    verify_ed25519(public, signature, b'')
+                    load.assert_called_once_with(str(directory / 'libcrypto-3.dll'))
+                    with self.assertRaisesRegex(ValueError, 'Подпись реестра'):
+                        verify_ed25519(public, signature, b'changed payload')
 
 
 class RegistryConfigurationTests(unittest.TestCase):

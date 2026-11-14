@@ -36,7 +36,10 @@ def verify_ed25519(key, signature, payload):
     if len(key) != 32 or len(signature) != 64:
         raise ValueError("Некорректная подпись реестра.")
     if sys.platform == "win32":
-        library = str(Path(sys.executable).resolve().parent / "libcrypto-3.dll")
+        import _ssl
+        # Installed CPython keeps OpenSSL in DLLs; the embedded runtime keeps
+        # it at its root. In both layouts it is beside the TLS extension.
+        library = str(Path(_ssl.__file__).resolve().with_name("libcrypto-3.dll"))
     else:
         library = ctypes.util.find_library("crypto")
         if not library:
